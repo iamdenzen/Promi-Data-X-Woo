@@ -7,38 +7,53 @@ use PromiDataXWoo\Promi\Cron;
 defined( 'ABSPATH' ) || exit;
 
 /**
- * Plugin deactivation.
+ * Plugin deactivation handler.
  *
- * Deactivation must NEVER delete imported products, prices, print data,
- * configuration or custom database tables.
+ * Responsibilities:
+ *
+ * - Stop scheduled Promi background jobs.
+ * - Flush rewrite rules.
+ *
+ * Deactivation intentionally preserves:
+ *
+ * - Imported WooCommerce products and variations.
+ * - Promi index and queue data.
+ * - Tier pricing.
+ * - Printing data.
+ * - Ignore rules.
+ * - Plugin settings.
+ * - Media attachments.
+ *
+ * Permanent data removal, if ever required, belongs in uninstall.php and
+ * should be explicit rather than happening during normal deactivation.
  */
 final class Deactivator {
 
+	/**
+	 * Run plugin deactivation.
+	 */
 	public static function deactivate(): void {
 
-		/**
-		 * Stop our new Promi cron system.
-		 */
-		if ( class_exists( Cron::class ) ) {
-			Cron::deactivate();
-		}
+		/*
+		|--------------------------------------------------------------------------
+		| Promi Cron
+		|--------------------------------------------------------------------------
+		*/
+
+		Cron::deactivate();
 
 
-		/**
-		 * ------------------------------------------------------------------
-		 * Legacy Cron Cleanup
-		 * ------------------------------------------------------------------
-		 *
-		 * Your current CX Promi plugin uses these three hooks.
-		 *
-		 * Cleaning them here prevents orphaned events if the site is migrated
-		 * from the old plugin architecture to Promi-Data X Woo.
-		 */
-		wp_clear_scheduled_hook( 'cx_promi_cron_index' );
-		wp_clear_scheduled_hook( 'cx_promi_cron_worker' );
-		wp_clear_scheduled_hook( 'cx_promi_cron_images' );
+		/*
+		|--------------------------------------------------------------------------
+		| Rewrite Rules
+		|--------------------------------------------------------------------------
+		*/
+
+		flush_rewrite_rules();
 
 
-		do_action( 'pdxw_deactivated' );
+		do_action(
+			'pdxw_deactivated'
+		);
 	}
 }

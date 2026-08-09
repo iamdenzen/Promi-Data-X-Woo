@@ -2,84 +2,51 @@
 
 namespace PromiDataXWoo\Core;
 
-use PromiDataXWoo\Promi\Promi;
+use PromiDataXWoo\Admin\Admin;
 use PromiDataXWoo\Catalog\Catalog;
+use PromiDataXWoo\Frontend\Frontend;
 use PromiDataXWoo\Pricing\Pricing;
 use PromiDataXWoo\Printing\Printing;
-use PromiDataXWoo\Frontend\Frontend;
-use PromiDataXWoo\Admin\Admin;
+use PromiDataXWoo\Promi\Promi;
 
 defined( 'ABSPATH' ) || exit;
 
 /**
- * Main plugin application.
+ * Main Promi-Data X Woo application.
  *
- * Acts as the central container for Promi-Data X Woo.
+ * Acts as the plugin's application container.
  *
  * Responsibilities:
- * - Boot the plugin.
- * - Initialize modules in the correct order.
- * - Hold module instances.
- * - Provide controlled access to shared modules.
  *
- * Business logic should not live here.
+ * - Initialize plugin modules in dependency order.
+ * - Hold shared module instances.
+ * - Perform lightweight runtime maintenance.
+ * - Expose controlled access to each subsystem.
+ *
+ * Business logic does not belong in this class.
  */
 final class Plugin {
 
 	/**
-	 * Plugin instance.
-	 *
-	 * @var Plugin|null
+	 * Singleton instance.
 	 */
-	private static ?Plugin $instance = null;
+	private static ?self $instance = null;
 
 	/**
-	 * Whether the plugin has already booted.
-	 *
-	 * @var bool
+	 * Whether the application has booted.
 	 */
 	private bool $booted = false;
 
-	/**
-	 * Promi integration.
-	 *
-	 * @var Promi|null
-	 */
-	private ?Promi $promi = null;
-
-	/**
-	 * WooCommerce catalog integration.
-	 *
-	 * @var Catalog|null
-	 */
 	private ?Catalog $catalog = null;
 
-	/**
-	 * Pricing system.
-	 *
-	 * @var Pricing|null
-	 */
 	private ?Pricing $pricing = null;
 
-	/**
-	 * Print configuration and pricing.
-	 *
-	 * @var Printing|null
-	 */
 	private ?Printing $printing = null;
 
-	/**
-	 * Frontend functionality.
-	 *
-	 * @var Frontend|null
-	 */
+	private ?Promi $promi = null;
+
 	private ?Frontend $frontend = null;
 
-	/**
-	 * Admin functionality.
-	 *
-	 * @var Admin|null
-	 */
 	private ?Admin $admin = null;
 
 
@@ -96,9 +63,9 @@ final class Plugin {
 
 
 	/**
-	 * Get plugin instance.
+	 * Return the application instance.
 	 */
-	public static function instance(): Plugin {
+	public static function instance(): self {
 
 		if ( null === self::$instance ) {
 			self::$instance = new self();
@@ -109,7 +76,7 @@ final class Plugin {
 
 
 	/**
-	 * Boot the application.
+	 * Boot Promi-Data X Woo.
 	 */
 	public function boot(): void {
 
@@ -119,88 +86,111 @@ final class Plugin {
 
 		$this->booted = true;
 
-		/**
-		 * Load translations.
-		 */
+
+		/*
+		|--------------------------------------------------------------------------
+		| Translations
+		|--------------------------------------------------------------------------
+		*/
+
 		$this->load_textdomain();
 
-        /*
-         * Ensure the database is up to date.
-         *
-         * This is a bit of a hack, but it works. We don't want to run this
-         * on every page load, but we also don't want to require a separate
-         * upgrade routine. So we check the version and run the upgrade if
-         * needed.
-         *
-         * This is not ideal, but it is a common pattern in WordPress plugins.
-         * It is also safe because the upgrade routine is idempotent.
-         *
-         * @see Database::maybe_upgrade()
-         */
-        Database::maybe_upgrade();
 
-		/**
-		 * Fire before any modules initialize.
-		 *
-		 * Useful later if we need internal extensions without modifying
-		 * the plugin bootstrap.
-		 */
-		do_action( 'pdxw_before_boot', $this );
+		/*
+		|--------------------------------------------------------------------------
+		| Database Upgrades
+		|--------------------------------------------------------------------------
+		|
+		| Activation normally installs the schema, but maybe_upgrade() also
+		| protects deployments where plugin files are replaced without
+		| explicitly deactivating/reactivating the plugin.
+		*/
 
-		/**
-		 * Register the core modules.
-		 *
-		 * Order matters.
-		 *
-		 * Catalog:
-		 * WooCommerce product structures.
-		 *
-		 * Pricing:
-		 * Product/variation tiered pricing.
-		 *
-		 * Printing:
-		 * Positions, options, print prices and fees.
-		 *
-		 * Promi:
-		 * Imports data into Catalog/Pricing/Printing.
-		 *
-		 * Frontend:
-		 * Consumes Catalog/Pricing/Printing.
-		 *
-		 * Admin:
-		 * Management interface for everything above.
-		 */
+		Database::maybe_upgrade();
+
+
+		do_action(
+			'pdxw_before_boot',
+			$this
+		);
+
+
+		/*
+		|--------------------------------------------------------------------------
+		| Modules
+		|--------------------------------------------------------------------------
+		*/
+
 		$this->register_modules();
 
-		/**
-		 * Initialize modules.
-		 */
 		$this->init_modules();
 
-		do_action( 'pdxw_loaded', $this );
+
+		do_action(
+			'pdxw_loaded',
+			$this
+		);
 	}
 
 
 	/**
-	 * Register the plugin's modules.
+	 * Construct all application modules.
 	 *
-	 * Registration creates the objects.
-	 * It should not yet attach expensive hooks or execute business logic.
+	 * Construction establishes dependencies only.
+	 * Hooks and runtime behavior belong in each module's init() method.
 	 */
 	private function register_modules(): void {
 
-		$this->catalog = new Catalog( $this );
+		/*
+		|--------------------------------------------------------------------------
+		| Catalog
+		|--------------------------------------------------------------------------
+		|
+		| WooCommerce product structures are the lowest-level business domain.
+		*/
+
+		$this->catalog = new Catalog(
+			$this
+		);
+
+
+		/*
+		|--------------------------------------------------------------------------
+		| Pricing
+		|--------------------------------------------------------------------------
+		*/
 
 		$this->pricing = new Pricing(
 			$this,
 			$this->catalog
 		);
 
+
+		/*
+		|--------------------------------------------------------------------------
+		| Printing
+		|--------------------------------------------------------------------------
+		|
+		| Printing depends on Pricing because print costs participate in the
+		| unified price calculation pipeline.
+		*/
+
 		$this->printing = new Printing(
 			$this,
 			$this->catalog,
 			$this->pricing
 		);
+
+
+		/*
+		|--------------------------------------------------------------------------
+		| Promi
+		|--------------------------------------------------------------------------
+		|
+		| Promi imports data into Catalog, Pricing and Printing.
+		|
+		| Those modules deliberately do not depend on Promi.
+		*/
 
 		$this->promi = new Promi(
 			$this,
@@ -209,12 +199,28 @@ final class Plugin {
 			$this->printing
 		);
 
+
+		/*
+		|--------------------------------------------------------------------------
+		| Frontend
+		|--------------------------------------------------------------------------
+		|
+		| Frontend consumes the business-domain modules but does not own them.
+		*/
+
 		$this->frontend = new Frontend(
 			$this,
 			$this->catalog,
 			$this->pricing,
 			$this->printing
 		);
+
+
+		/*
+		|--------------------------------------------------------------------------
+		| Admin
+		|--------------------------------------------------------------------------
+		*/
 
 		if ( is_admin() ) {
 
@@ -230,108 +236,128 @@ final class Plugin {
 
 
 	/**
-	 * Initialize registered modules.
+	 * Initialize modules in dependency order.
 	 */
 	private function init_modules(): void {
 
-		/**
-		 * Catalog must initialize first because most other systems operate
-		 * against WooCommerce products and variations.
-		 */
+		/*
+		|--------------------------------------------------------------------------
+		| Catalog
+		|--------------------------------------------------------------------------
+		*/
+
 		$this->catalog?->init();
 
-		/**
-		 * Pricing establishes the pricing pipeline before anything
-		 * attempts to calculate prices.
-		 */
+
+		/*
+		|--------------------------------------------------------------------------
+		| Pricing
+		|--------------------------------------------------------------------------
+		|
+		| Pricing must initialize before Printing so the engine exists before
+		| Printing registers its calculation callback.
+		*/
+
 		$this->pricing?->init();
 
-		/**
-		 * Printing can then attach itself to the pricing pipeline.
-		 */
+
+		/*
+		|--------------------------------------------------------------------------
+		| Printing
+		|--------------------------------------------------------------------------
+		*/
+
 		$this->printing?->init();
 
-		/**
-		 * Promi imports/synchronizes data into the systems above.
-		 */
+
+		/*
+		|--------------------------------------------------------------------------
+		| Promi
+		|--------------------------------------------------------------------------
+		|
+		| Promi can now safely synchronize data into the initialized domains.
+		*/
+
 		$this->promi?->init();
 
-		/**
-		 * Frontend consumes those systems.
-		 */
+
+		/*
+		|--------------------------------------------------------------------------
+		| Frontend
+		|--------------------------------------------------------------------------
+		*/
+
 		$this->frontend?->init();
 
-		/**
-		 * Admin is loaded last.
-		 */
+
+		/*
+		|--------------------------------------------------------------------------
+		| Admin
+		|--------------------------------------------------------------------------
+		*/
+
 		$this->admin?->init();
 	}
 
 
 	/**
-	 * Load plugin translations.
+	 * Load translations.
 	 */
 	private function load_textdomain(): void {
 
 		load_plugin_textdomain(
 			'promi-data-x-woo',
 			false,
-			dirname( PDXW_BASENAME ) . '/languages'
+			dirname(
+				PDXW_BASENAME
+			)
+			. '/languages'
 		);
 	}
 
 
-	/**
-	 * Get Promi module.
-	 */
-	public function promi(): ?Promi {
-		return $this->promi;
-	}
+	/*
+	|--------------------------------------------------------------------------
+	| Module Accessors
+	|--------------------------------------------------------------------------
+	*/
 
-
-	/**
-	 * Get Catalog module.
-	 */
 	public function catalog(): ?Catalog {
 		return $this->catalog;
 	}
 
 
-	/**
-	 * Get Pricing module.
-	 */
 	public function pricing(): ?Pricing {
 		return $this->pricing;
 	}
 
 
-	/**
-	 * Get Printing module.
-	 */
 	public function printing(): ?Printing {
 		return $this->printing;
 	}
 
 
-	/**
-	 * Get Frontend module.
-	 */
+	public function promi(): ?Promi {
+		return $this->promi;
+	}
+
+
 	public function frontend(): ?Frontend {
 		return $this->frontend;
 	}
 
 
-	/**
-	 * Get Admin module.
-	 */
 	public function admin(): ?Admin {
 		return $this->admin;
 	}
 
 
-	/**
-	 * Has the plugin finished booting?
-	 */
+	/*
+	|--------------------------------------------------------------------------
+	| State
+	|--------------------------------------------------------------------------
+	*/
+
 	public function is_booted(): bool {
 		return $this->booted;
 	}
