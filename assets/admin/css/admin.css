@@ -1,0 +1,903 @@
+/*
+|--------------------------------------------------------------------------
+| Promi-Data X Woo Admin
+|--------------------------------------------------------------------------
+|
+| Shared administration styles for:
+|
+| - Promi dashboard
+| - Promi index
+| - Queue
+| - Ignore SKUs
+| - Ignore rules
+| - Tier pricing
+| - Printing diagnostics
+|
+| Keep selectors scoped to .pdxw-admin wherever possible so the plugin does
+| not unintentionally alter unrelated WordPress / WooCommerce admin screens.
+|--------------------------------------------------------------------------
+*/
+
+
+/*
+|--------------------------------------------------------------------------
+| Root
+|--------------------------------------------------------------------------
+*/
+
+.pdxw-admin {
+	--pdxw-gap: 20px;
+	--pdxw-border: #dcdcde;
+	--pdxw-border-light: #e8e8e8;
+	--pdxw-background: #ffffff;
+	--pdxw-background-soft: #f6f7f7;
+	--pdxw-text-muted: #646970;
+	--pdxw-danger: #b32d2e;
+	--pdxw-success: #008a20;
+	--pdxw-warning: #996800;
+	--pdxw-radius: 3px;
+	--pdxw-shadow: 0 1px 1px rgba(0, 0, 0, 0.04);
+}
+
+.pdxw-admin > h1 {
+	margin-bottom: 4px;
+}
+
+.pdxw-admin > .description {
+	max-width: 920px;
+	margin-top: 0;
+	margin-bottom: 20px;
+	color: var(--pdxw-text-muted);
+}
+
+.pdxw-admin * {
+	box-sizing: border-box;
+}
+
+
+/*
+|--------------------------------------------------------------------------
+| Shared Layout
+|--------------------------------------------------------------------------
+*/
+
+.pdxw-admin-grid {
+	display: grid;
+	grid-template-columns: repeat(
+		auto-fit,
+		minmax(320px, 1fr)
+	);
+	gap: var(--pdxw-gap);
+	margin: 20px 0;
+}
+
+.pdxw-box {
+	background: var(--pdxw-background);
+	border: 1px solid var(--pdxw-border);
+	border-radius: var(--pdxw-radius);
+	box-shadow: var(--pdxw-shadow);
+	margin: 20px 0;
+	padding: 18px 20px;
+}
+
+.pdxw-admin-grid > .pdxw-box {
+	margin: 0;
+}
+
+.pdxw-box > :first-child {
+	margin-top: 0;
+}
+
+.pdxw-box > :last-child {
+	margin-bottom: 0;
+}
+
+.pdxw-box h2 {
+	margin-top: 0;
+	margin-bottom: 16px;
+	font-size: 16px;
+	line-height: 1.4;
+}
+
+.pdxw-box h3 {
+	margin-top: 24px;
+	margin-bottom: 12px;
+	font-size: 14px;
+}
+
+.pdxw-box p.description {
+	color: var(--pdxw-text-muted);
+}
+
+
+/*
+|--------------------------------------------------------------------------
+| Shared Headers
+|--------------------------------------------------------------------------
+*/
+
+.pdxw-section-header,
+.pdxw-tier-target-header,
+.pdxw-table-header {
+	display: flex;
+	align-items: flex-start;
+	justify-content: space-between;
+	gap: 20px;
+}
+
+.pdxw-section-header,
+.pdxw-tier-target-header {
+	margin-bottom: 18px;
+}
+
+.pdxw-section-header h2,
+.pdxw-tier-target-header h2 {
+	margin: 0 0 4px;
+}
+
+.pdxw-section-header p,
+.pdxw-tier-target-header p {
+	margin: 4px 0;
+}
+
+.pdxw-table-header {
+	align-items: center;
+	margin-bottom: 12px;
+}
+
+
+/*
+|--------------------------------------------------------------------------
+| WordPress Tables
+|--------------------------------------------------------------------------
+*/
+
+.pdxw-admin .widefat {
+	border-color: var(--pdxw-border);
+}
+
+.pdxw-admin .widefat th,
+.pdxw-admin .widefat td {
+	vertical-align: middle;
+}
+
+.pdxw-admin .widefat td {
+	word-break: normal;
+}
+
+.pdxw-admin .widefat code {
+	white-space: normal;
+	word-break: break-word;
+}
+
+.pdxw-admin .widefat pre {
+	max-width: 100%;
+	overflow-x: auto;
+}
+
+.pdxw-admin .wp-list-table .column-actions,
+.pdxw-admin .wp-list-table td:last-child {
+	white-space: nowrap;
+}
+
+
+/*
+|--------------------------------------------------------------------------
+| Forms
+|--------------------------------------------------------------------------
+*/
+
+.pdxw-admin input[type="text"],
+.pdxw-admin input[type="search"],
+.pdxw-admin input[type="url"],
+.pdxw-admin input[type="number"],
+.pdxw-admin select {
+	max-width: 100%;
+}
+
+.pdxw-admin input.regular-text {
+	width: min(100%, 520px);
+}
+
+.pdxw-admin .search-box {
+	float: none;
+	display: flex;
+	align-items: center;
+	justify-content: flex-end;
+	gap: 6px;
+	margin: 0 0 12px;
+}
+
+.pdxw-admin .search-box input[type="search"] {
+	min-width: 240px;
+}
+
+.pdxw-admin .pdxw-print-search .search-box {
+	justify-content: flex-start;
+}
+
+.pdxw-admin label {
+	font-weight: 500;
+}
+
+
+/*
+|--------------------------------------------------------------------------
+| Buttons
+|--------------------------------------------------------------------------
+*/
+
+.pdxw-admin .button + .button {
+	margin-left: 4px;
+}
+
+.pdxw-admin .button.is-busy {
+	position: relative;
+	cursor: wait;
+	opacity: 0.72;
+}
+
+.pdxw-admin .button.is-busy::after {
+	content: "";
+	display: inline-block;
+	width: 11px;
+	height: 11px;
+	margin-left: 7px;
+	border: 2px solid currentColor;
+	border-right-color: transparent;
+	border-radius: 50%;
+	vertical-align: -2px;
+	animation: pdxw-spin 0.7s linear infinite;
+}
+
+@keyframes pdxw-spin {
+
+	to {
+		transform: rotate(360deg);
+	}
+}
+
+
+/*
+|--------------------------------------------------------------------------
+| AJAX / Notices
+|--------------------------------------------------------------------------
+*/
+
+.pdxw-admin-message {
+	margin: 12px 0 18px;
+}
+
+.pdxw-admin-message:empty {
+	display: none;
+}
+
+.pdxw-admin-message.notice {
+	margin-left: 0;
+	margin-right: 0;
+	padding-right: 12px;
+}
+
+.pdxw-row-updated td {
+	animation: pdxw-row-highlight 1.4s ease-out;
+}
+
+@keyframes pdxw-row-highlight {
+
+	from {
+		background: #edfaef;
+	}
+
+	to {
+		background: transparent;
+	}
+}
+
+
+/*
+|--------------------------------------------------------------------------
+| Dashboard
+|--------------------------------------------------------------------------
+*/
+
+.pdxw-promi-dashboard .pdxw-admin-grid:first-of-type {
+	margin-top: 24px;
+}
+
+.pdxw-promi-dashboard .pdxw-box table {
+	margin-top: 8px;
+}
+
+.pdxw-promi-dashboard .pdxw-box table th {
+	width: 55%;
+}
+
+.pdxw-promi-dashboard .pdxw-box table td {
+	font-variant-numeric: tabular-nums;
+}
+
+#pdxw-progress-pending,
+#pdxw-progress-running,
+#pdxw-progress-done,
+#pdxw-progress-failed,
+#pdxw-progress-total {
+	font-weight: 600;
+}
+
+
+/*
+|--------------------------------------------------------------------------
+| Worker Log
+|--------------------------------------------------------------------------
+*/
+
+#pdxw-worker-log {
+	box-sizing: border-box;
+	width: 100%;
+	min-height: 160px;
+	max-height: 340px;
+	overflow: auto;
+	margin: 12px 0 0;
+	padding: 12px 14px;
+	background: #1d2327;
+	color: #f0f0f1;
+	border: 1px solid #101517;
+	border-radius: var(--pdxw-radius);
+	font-family:
+		Consolas,
+		Monaco,
+		monospace;
+	font-size: 12px;
+	line-height: 1.6;
+	white-space: pre-wrap;
+	word-break: break-word;
+}
+
+
+/*
+|--------------------------------------------------------------------------
+| Queue Status
+|--------------------------------------------------------------------------
+*/
+
+.pdxw-admin .pdxw-status {
+	display: inline-flex;
+	align-items: center;
+	gap: 5px;
+	font-weight: 600;
+}
+
+.pdxw-admin .pdxw-status::before {
+	content: "";
+	display: inline-block;
+	width: 7px;
+	height: 7px;
+	border-radius: 50%;
+	background: #787c82;
+}
+
+.pdxw-admin .pdxw-status-pending::before {
+	background: #dba617;
+}
+
+.pdxw-admin .pdxw-status-running::before {
+	background: #2271b1;
+}
+
+.pdxw-admin .pdxw-status-done::before {
+	background: var(--pdxw-success);
+}
+
+.pdxw-admin .pdxw-status-failed::before {
+	background: var(--pdxw-danger);
+}
+
+
+/*
+|--------------------------------------------------------------------------
+| Pagination
+|--------------------------------------------------------------------------
+*/
+
+.pdxw-admin .tablenav {
+	height: auto;
+	min-height: 36px;
+	margin-top: 14px;
+}
+
+.pdxw-admin .tablenav-pages {
+	float: none;
+	margin: 0;
+}
+
+.pdxw-admin .tablenav-pages .page-numbers {
+	display: inline-flex;
+	align-items: center;
+	gap: 2px;
+	margin: 0;
+}
+
+.pdxw-admin .tablenav-pages .page-numbers li {
+	margin: 0;
+}
+
+
+/*
+|--------------------------------------------------------------------------
+| Tier Pricing
+|--------------------------------------------------------------------------
+*/
+
+.pdxw-pricing-page .pdxw-tier-target {
+	margin-bottom: 24px;
+}
+
+.pdxw-tier-target-header {
+	border-bottom: 1px solid var(--pdxw-border-light);
+	padding-bottom: 14px;
+}
+
+.pdxw-tier-table {
+	table-layout: fixed;
+}
+
+.pdxw-tier-table th:nth-child(1) {
+	width: 24%;
+}
+
+.pdxw-tier-table th:nth-child(2),
+.pdxw-tier-table th:nth-child(3) {
+	width: 30%;
+}
+
+.pdxw-tier-table th:last-child {
+	width: 16%;
+}
+
+.pdxw-tier-table input[type="number"],
+.pdxw-tier-table input[type="text"] {
+	width: 100%;
+	max-width: 180px;
+}
+
+.pdxw-tier-table td:last-child,
+.pdxw-tier-table th:last-child {
+	text-align: right;
+}
+
+.pdxw-tier-actions {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 12px;
+	margin-top: 14px;
+}
+
+.pdxw-tier-actions .button {
+	margin-left: 0;
+}
+
+.pdxw-tier-table tbody tr {
+	transition:
+		opacity 120ms ease,
+		background-color 120ms ease;
+}
+
+.pdxw-tier-table tbody tr:hover td {
+	background-color: #fafafa;
+}
+
+.pdxw-tier-table .pdxw-remove-tier {
+	color: var(--pdxw-danger);
+	border-color: #d63638;
+}
+
+.pdxw-tier-table .pdxw-remove-tier:hover,
+.pdxw-tier-table .pdxw-remove-tier:focus {
+	color: #ffffff;
+	background: #d63638;
+	border-color: #d63638;
+}
+
+
+/*
+|--------------------------------------------------------------------------
+| Tier Save Footer
+|--------------------------------------------------------------------------
+*/
+
+.pdxw-pricing-page .submit {
+	display: flex;
+	align-items: center;
+	gap: 10px;
+	margin-top: 20px;
+	padding-top: 0;
+}
+
+
+/*
+|--------------------------------------------------------------------------
+| Printing
+|--------------------------------------------------------------------------
+*/
+
+.pdxw-printing-page .pdxw-print-options-table td,
+.pdxw-printing-page .pdxw-print-options-table th {
+	vertical-align: middle;
+}
+
+.pdxw-print-option-details {
+	margin-top: 22px;
+}
+
+.pdxw-print-option-details > table:first-of-type {
+	margin-bottom: 22px;
+}
+
+.pdxw-print-option-details h3 {
+	border-bottom: 1px solid var(--pdxw-border-light);
+	padding-bottom: 7px;
+}
+
+.pdxw-print-price-table,
+.pdxw-print-fees-table {
+	margin-bottom: 22px;
+}
+
+.pdxw-print-fees-table {
+	table-layout: auto;
+}
+
+.pdxw-print-fees-table td,
+.pdxw-print-fees-table th {
+	min-width: 90px;
+}
+
+.pdxw-print-fees-table td:first-child,
+.pdxw-print-fees-table th:first-child {
+	min-width: 150px;
+}
+
+.pdxw-print-fees-table pre {
+	max-height: 220px;
+	overflow: auto;
+	padding: 8px;
+	background: var(--pdxw-background-soft);
+	border: 1px solid var(--pdxw-border-light);
+	border-radius: 2px;
+	font-size: 11px;
+	line-height: 1.45;
+}
+
+
+/*
+|--------------------------------------------------------------------------
+| Variation Printing Diagnostics
+|--------------------------------------------------------------------------
+|
+| PrintingPage inserts this into WooCommerce's variation editor, outside the
+| normal standalone .pdxw-admin wrapper, so these rules intentionally begin
+| from .pdxw-variation-printing instead.
+|--------------------------------------------------------------------------
+*/
+
+.pdxw-variation-printing {
+	box-sizing: border-box;
+	clear: both;
+	margin: 12px;
+	border-top: 1px solid #dcdcde;
+}
+
+.pdxw-variation-printing h4 {
+	margin: 2px 0 12px;
+	font-size: 14px;
+}
+
+.pdxw-variation-print-position {
+	box-sizing: border-box;
+	border-radius: 2px;
+}
+
+.pdxw-variation-print-position > p:first-child {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: 6px;
+}
+
+.pdxw-variation-print-options {
+	margin-top: 8px;
+}
+
+.pdxw-variation-print-options th,
+.pdxw-variation-print-options td {
+	vertical-align: middle;
+}
+
+.pdxw-variation-print-options code {
+	white-space: normal;
+}
+
+
+/*
+|--------------------------------------------------------------------------
+| Product Meta Box
+|--------------------------------------------------------------------------
+*/
+
+#pdxw_promi_index .inside {
+	margin-top: 0;
+	padding-top: 12px;
+}
+
+#pdxw_promi_index table {
+	width: 100%;
+	border-collapse: collapse;
+}
+
+#pdxw_promi_index th,
+#pdxw_promi_index td {
+	padding: 8px 6px;
+	text-align: left;
+	vertical-align: top;
+	border-bottom: 1px solid #f0f0f1;
+}
+
+#pdxw_promi_index th {
+	width: 120px;
+	font-weight: 600;
+}
+
+#pdxw_promi_index td code {
+	word-break: break-all;
+}
+
+#pdxw_promi_index td a {
+	word-break: break-word;
+}
+
+
+/*
+|--------------------------------------------------------------------------
+| Product List Diagnostics
+|--------------------------------------------------------------------------
+*/
+
+.column-pdxw_promi_status {
+	width: 120px;
+}
+
+.pdxw-promi-enabled,
+.pdxw-promi-disabled {
+	display: inline-flex;
+	align-items: center;
+	gap: 6px;
+	font-weight: 600;
+}
+
+.pdxw-promi-enabled::before,
+.pdxw-promi-disabled::before {
+	content: "";
+	display: inline-block;
+	width: 7px;
+	height: 7px;
+	border-radius: 50%;
+}
+
+.pdxw-promi-enabled::before {
+	background: var(--pdxw-success);
+}
+
+.pdxw-promi-disabled::before {
+	background: var(--pdxw-danger);
+}
+
+
+/*
+|--------------------------------------------------------------------------
+| Ignore Screens
+|--------------------------------------------------------------------------
+*/
+
+.pdxw-admin .pdxw-ignore-form {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: flex-end;
+	gap: 10px;
+	margin: 18px 0;
+	padding: 16px;
+	background: var(--pdxw-background);
+	border: 1px solid var(--pdxw-border);
+	box-shadow: var(--pdxw-shadow);
+}
+
+.pdxw-admin .pdxw-ignore-form p {
+	margin: 0;
+}
+
+.pdxw-admin .pdxw-ignore-form label {
+	display: block;
+	margin-bottom: 5px;
+}
+
+
+/*
+|--------------------------------------------------------------------------
+| Search / Filter Toolbar
+|--------------------------------------------------------------------------
+*/
+
+.pdxw-admin .pdxw-filters,
+.pdxw-admin .pdxw-toolbar {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: 7px;
+	margin: 12px 0;
+}
+
+.pdxw-admin .pdxw-filters select,
+.pdxw-admin .pdxw-toolbar select {
+	max-width: 240px;
+}
+
+
+/*
+|--------------------------------------------------------------------------
+| Empty States
+|--------------------------------------------------------------------------
+*/
+
+.pdxw-admin .pdxw-empty,
+.pdxw-admin td.pdxw-empty {
+	padding: 28px 18px;
+	text-align: center;
+	color: var(--pdxw-text-muted);
+}
+
+
+/*
+|--------------------------------------------------------------------------
+| Code / Technical Values
+|--------------------------------------------------------------------------
+*/
+
+.pdxw-admin code {
+	padding: 2px 5px;
+	border-radius: 2px;
+	background: #f0f0f1;
+	color: #2c3338;
+}
+
+.pdxw-admin td code {
+	font-size: 12px;
+}
+
+
+/*
+|--------------------------------------------------------------------------
+| Request State
+|--------------------------------------------------------------------------
+*/
+
+body.pdxw-request-active {
+	cursor: progress;
+}
+
+body.pdxw-request-active .pdxw-admin .button.is-busy {
+	cursor: wait;
+}
+
+
+/*
+|--------------------------------------------------------------------------
+| Responsive
+|--------------------------------------------------------------------------
+*/
+
+@media screen and (max-width: 960px) {
+
+	.pdxw-admin-grid {
+		grid-template-columns: 1fr;
+	}
+
+	.pdxw-section-header,
+	.pdxw-tier-target-header {
+		flex-direction: column;
+	}
+
+	.pdxw-tier-target-header > :last-child {
+		width: 100%;
+	}
+
+	.pdxw-print-fees-table {
+		display: block;
+		overflow-x: auto;
+		white-space: nowrap;
+	}
+}
+
+
+@media screen and (max-width: 782px) {
+
+	.pdxw-admin {
+		--pdxw-gap: 14px;
+	}
+
+	.pdxw-box {
+		padding: 14px;
+	}
+
+	.pdxw-admin .search-box {
+		display: flex;
+		float: none;
+		flex-wrap: wrap;
+		justify-content: flex-start;
+	}
+
+	.pdxw-admin .search-box input[type="search"] {
+		flex: 1 1 220px;
+		min-width: 0;
+		width: auto;
+	}
+
+	.pdxw-admin .button + .button {
+		margin-left: 0;
+	}
+
+	.pdxw-tier-actions {
+		align-items: stretch;
+		flex-direction: column;
+	}
+
+	.pdxw-tier-table {
+		display: block;
+		overflow-x: auto;
+	}
+
+	.pdxw-tier-table input[type="number"],
+	.pdxw-tier-table input[type="text"] {
+		min-width: 110px;
+	}
+
+	.pdxw-print-options-table,
+	.pdxw-print-price-table,
+	.pdxw-print-fees-table,
+	.pdxw-variation-print-options {
+		display: block;
+		overflow-x: auto;
+	}
+
+	.pdxw-section-header .button,
+	.pdxw-tier-target-header .button {
+		width: 100%;
+		text-align: center;
+	}
+}
+
+
+/*
+|--------------------------------------------------------------------------
+| Reduced Motion
+|--------------------------------------------------------------------------
+*/
+
+@media (prefers-reduced-motion: reduce) {
+
+	.pdxw-admin *,
+	.pdxw-admin *::before,
+	.pdxw-admin *::after {
+		scroll-behavior: auto !important;
+		animation-duration: 0.01ms !important;
+		animation-iteration-count: 1 !important;
+		transition-duration: 0.01ms !important;
+	}
+
+	.pdxw-variation-printing *,
+	.pdxw-variation-printing *::before,
+	.pdxw-variation-printing *::after {
+		animation-duration: 0.01ms !important;
+		animation-iteration-count: 1 !important;
+		transition-duration: 0.01ms !important;
+	}
+}

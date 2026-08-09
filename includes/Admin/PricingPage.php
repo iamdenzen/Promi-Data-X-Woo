@@ -383,12 +383,7 @@ final class PricingPage {
 
 		<?php
 		$this->render_row_template();
-		?>
-
-		<?php
-		$this->render_script();
-		?>
-		<?php
+		
 	}
 
 
@@ -876,7 +871,7 @@ final class PricingPage {
 	 * the PHP page remains independently functional during the file-by-file
 	 * rebuild.
 	 */
-	private function render_script(): void {
+	/*private function render_script(): void {
 
 		?>
 		<script>
@@ -1005,7 +1000,7 @@ final class PricingPage {
 		});
 		</script>
 		<?php
-	}
+	}*/
 
 
 	/*
