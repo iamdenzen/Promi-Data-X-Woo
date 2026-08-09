@@ -9,12 +9,7 @@ window.CX = window.CX || {};
  * Renderers consume state.
  * API transfers state to/from WordPress.
  */
-console.log(Number.parseInt(
-			window.cxatc_vars?.product_id
-				|| 0,
-			10
-		) || 0);
-		
+
 CX.state = {
 
 	/*

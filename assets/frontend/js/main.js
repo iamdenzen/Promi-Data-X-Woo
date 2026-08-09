@@ -11,6 +11,12 @@
 	 * shopper has selected a variation.
 	 */
 	CX.init = function () {
+		
+		CX.state.product_id = Number.parseInt(
+			window.cxatc_vars?.product_id
+				|| 0,
+			10
+		) || 0;
 
 		/*
 		|--------------------------------------------------------------------------
