@@ -1010,8 +1010,8 @@ final class PricingPage {
 	*/
 
 	/**
-	 * Persist all submitted pricing targets.
-	 */
+	 * Persist all submitted pricing targets
+	 */ 
 	public function save(): void {
 
 		$this->authorize();
