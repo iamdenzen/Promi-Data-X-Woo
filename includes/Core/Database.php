@@ -204,23 +204,10 @@ final class Database {
 
 			PRIMARY KEY  (id),
 
-			KEY sku_status_idx (
-				sku,
-				status
-			),
-
-			KEY status_available_idx (
-				status,
-				available_at
-			),
-
-			KEY claim_token_idx (
-				claim_token
-			),
-
-			KEY claimed_at_idx (
-				claimed_at
-			)
+			KEY sku_status_idx (sku, status),
+			KEY status_available_idx (status, available_at),
+			KEY claim_token_idx (claim_token),
+			KEY claimed_at_idx (claimed_at)
 		) {$charset};";
 
 		dbDelta( $sql );
@@ -283,20 +270,11 @@ final class Database {
 
 			PRIMARY KEY  (id),
 
-			KEY sku_idx (
-				sku
-			),
+			KEY sku_idx (sku),
 
-			KEY type_field_idx (
-				type,
-				field_key
-			),
+			KEY type_field_idx (type, field_key),
 
-			KEY sku_type_field_idx (
-				sku,
-				type,
-				field_key
-			)
+			KEY sku_type_field_idx (sku, type, field_key)
 		) {$charset};";
 
 		dbDelta( $sql );
@@ -332,24 +310,13 @@ final class Database {
 
 			PRIMARY KEY  (id),
 
-			UNIQUE KEY product_variation_qty_unique (
-				product_id,
-				variation_id,
-				qty
-			),
+			UNIQUE KEY product_variation_qty_unique (product_id, variation_id, qty),
 
-			KEY product_variation_idx (
-				product_id,
-				variation_id
-			),
+			KEY product_variation_idx (product_id, variation_id),
 
-			KEY variation_idx (
-				variation_id
-			),
+			KEY variation_idx (variation_id),
 
-			KEY qty_idx (
-				qty
-			)
+			KEY qty_idx (qty)
 		) {$charset};";
 
 		dbDelta( $sql );
@@ -388,23 +355,13 @@ final class Database {
 
 			PRIMARY KEY  (id),
 
-			UNIQUE KEY product_variation_position_unique (
-				product_id,
-				variation_id,
-				position_code
-			),
+			UNIQUE KEY product_variation_position_unique (product_id, variation_id, position_code),
 
-			KEY product_idx (
-				product_id
-			),
+			KEY product_idx (product_id),
 
-			KEY variation_idx (
-				variation_id
-			),
+			KEY variation_idx (variation_id),
 
-			KEY position_code_idx (
-				position_code
-			)
+			KEY position_code_idx (position_code)
 		) {$charset};";
 
 		dbDelta( $sql );
@@ -438,13 +395,9 @@ final class Database {
 
 			PRIMARY KEY  (id),
 
-			KEY sku_idx (
-				sku
-			),
+			KEY sku_idx (sku),
 
-			KEY name_idx (
-				name
-			)
+			KEY name_idx (name)
 		) {$charset};";
 
 		dbDelta( $sql );
@@ -478,18 +431,11 @@ final class Database {
 
 			PRIMARY KEY  (id),
 
-			UNIQUE KEY option_qty_unique (
-				print_option_id,
-				min_qty
-			),
+			UNIQUE KEY option_qty_unique (print_option_id, min_qty),
 
-			KEY option_idx (
-				print_option_id
-			),
+			KEY option_idx (print_option_id),
 
-			KEY qty_idx (
-				min_qty
-			)
+			KEY qty_idx (min_qty)
 		) {$charset};";
 
 		dbDelta( $sql );
@@ -537,13 +483,9 @@ final class Database {
 
 			PRIMARY KEY  (id),
 
-			KEY option_idx (
-				print_option_id
-			),
+			KEY option_idx (print_option_id),
 
-			KEY fee_type_idx (
-				fee_type
-			)
+			KEY fee_type_idx (fee_type)
 		) {$charset};";
 
 		dbDelta( $sql );
@@ -584,33 +526,17 @@ final class Database {
 
 			PRIMARY KEY  (id),
 
-			UNIQUE KEY relation_unique (
-				product_id,
-				variation_id,
-				print_option_id,
-				print_position_id
-			),
+			UNIQUE KEY relation_unique (product_id, variation_id, print_option_id, print_position_id),
 
-			KEY product_idx (
-				product_id
-			),
+			KEY product_idx ( product_id ),
 
-			KEY variation_idx (
-				variation_id
-			),
+			KEY variation_idx ( variation_id ),
 
-			KEY option_idx (
-				print_option_id
-			),
+			KEY option_idx ( print_option_id ),
 
-			KEY position_idx (
-				print_position_id
-			),
+			KEY position_idx ( print_position_id ),
 
-			KEY product_variation_idx (
-				product_id,
-				variation_id
-			)
+			KEY product_variation_idx ( product_id, variation_id )
 		) {$charset};";
 
 		dbDelta( $sql );

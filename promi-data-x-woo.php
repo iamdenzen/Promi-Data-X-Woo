@@ -24,7 +24,7 @@ defined( 'ABSPATH' ) || exit;
  * --------------------------------------------------------------------------
  */
 
-define( 'PDXW_VERSION', '1.0.0' );
+define( 'PDXW_VERSION', '1.0.1' );
 
 define( 'PDXW_FILE', __FILE__ );
 define( 'PDXW_BASENAME', plugin_basename( __FILE__ ) );
