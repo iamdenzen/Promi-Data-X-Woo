@@ -173,21 +173,6 @@ final class Ajax {
 				] ?? []
 			);
 
-		error_log(
-			'get_data: '
-			. print_r(
-				[
-					'product_id'   => $product_id,
-					'variation_id' => $variation_id,
-					'attributes'   => $attributes,
-					'raw_attributes'	=> $_POST[
-						'attributes'
-					] ?? [],
-				],
-				true
-			)
-		);
-
 
 		/*
 		|--------------------------------------------------------------------------

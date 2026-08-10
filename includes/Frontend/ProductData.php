@@ -128,10 +128,6 @@ final class ProductData {
 					$variation_id,
 					$attributes
 				);
-			error_log(
-				'state: resolved variation_id='
-				. $variation_id
-			);
 
 		} else {
 
@@ -293,18 +289,7 @@ final class ProductData {
 				$attributes
 			);
 
-		error_log(
-			'resolve_variation: '
-			. print_r(
-				[
-					'product_id' => $product_id,
-					'variation_id' => $variation_id,
-					'attributes' => $attributes,
-				],
-				true
-			)
-		);
-
+		
 		if ( empty( $attributes ) ) {
 			return 0;
 		}
@@ -319,13 +304,83 @@ final class ProductData {
 			)
 		) {
 
-			return absint(
+			/*return absint(
 				$data_store
 					->find_matching_product_variation(
 						$product,
 						$attributes
 					)
+			);*/
+
+			$result = absint(
+				$data_store->find_matching_product_variation(
+					$product,
+					$attributes
+				)
 			);
+
+			error_log(
+				'MATCH INPUT: ' .
+				print_r( $attributes, true )
+			);
+
+			error_log(
+				'PARENT VARIATION ATTRIBUTES: ' .
+				print_r(
+					$product->get_variation_attributes(),
+					true
+				)
+			);
+
+			error_log(
+				'PARENT ATTRIBUTES: ' .
+				print_r(
+					array_map(
+						static function ( $attribute ) {
+							return [
+								'name'      => $attribute->get_name(),
+								'variation' => $attribute->get_variation(),
+								'options'   => $attribute->get_options(),
+							];
+						},
+						$product->get_attributes()
+					),
+					true
+				)
+			);
+
+			foreach ( $product->get_children() as $child_id ) {
+
+				$variation = wc_get_product( $child_id );
+
+				error_log(
+					'VARIATION ' . $child_id . ': ' .
+					print_r(
+						[
+							'status'         => get_post_status( $child_id ),
+							'attributes'     => $variation
+								? $variation->get_attributes()
+								: null,
+
+							'variation_meta' => [
+								'attribute_pa_farbe' =>
+									get_post_meta(
+										$child_id,
+										'attribute_pa_farbe',
+										true
+									),
+							],
+						],
+						true
+					)
+				);
+			}
+
+			error_log(
+				'MATCH RESULT: ' . $result
+			);
+
+			return $result;
 		}
 
 		return 0;
