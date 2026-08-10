@@ -298,10 +298,7 @@ final class CartPricing {
 		*/
 
 		$product->set_price(
-			wc_format_decimal(
-				$final_unit,
-				wc_get_price_decimals()
-			)
+			$final_unit
 		);
 
 
