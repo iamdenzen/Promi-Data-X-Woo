@@ -93,11 +93,6 @@ final class CartPricing {
 		\WC_Cart $cart
 	): void {
 
-		/*
-		 * Avoid running on unrelated wp-admin requests.
-		 *
-		 * WooCommerce checkout/cart AJAX requests still need pricing.
-		 */
 		if (
 			is_admin()
 			&& ! wp_doing_ajax()
@@ -105,11 +100,6 @@ final class CartPricing {
 			return;
 		}
 
-
-		/*
-		 * Protect against accidental recursion if another pricing callback
-		 * invokes cart-total calculation.
-		 */
 		if ( $this->calculating ) {
 			return;
 		}
@@ -118,8 +108,10 @@ final class CartPricing {
 
 		try {
 
+			$cart_contents = $cart->get_cart();
+
 			foreach (
-				$cart->get_cart()
+				$cart_contents
 				as $cart_item_key => &$cart_item
 			) {
 
@@ -130,6 +122,10 @@ final class CartPricing {
 			}
 
 			unset( $cart_item );
+
+			$cart->set_cart_contents(
+				$cart_contents
+			);
 
 		} finally {
 
@@ -365,7 +361,7 @@ final class CartPricing {
 		*/
 
 		$cart_item[
-			'_pdxw_pricing'
+			self::BREAKDOWN_KEY
 		] = [
 
 			'article_unit' =>
