@@ -75,7 +75,30 @@ final class CartPricing {
 				$this,
 				'calculate_cart',
 			],
-			20
+			99999
+		);
+
+		add_action(
+			'woocommerce_after_calculate_totals',
+			function ( \WC_Cart $cart ) {
+
+				foreach ( $cart->get_cart() as $key => $item ) {
+
+					$product = $item['data'];
+
+					error_log(
+						sprintf(
+							'PXD AFTER TOTALS | key=%s | product_price=%s | qty=%s | line_subtotal=%s | line_total=%s',
+							$key,
+							$product->get_price(),
+							$item['quantity'],
+							$item['line_subtotal'] ?? 'MISSING',
+							$item['line_total'] ?? 'MISSING'
+						)
+					);
+				}
+			},
+			999
 		);
 	}
 
