@@ -93,7 +93,8 @@ final class Pricing {
 
 		$this->cart =
 			new CartPricing(
-				$this->engine
+				$this->engine,
+				$this->tiers
 			);
 	}
 

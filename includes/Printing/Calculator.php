@@ -64,7 +64,8 @@ final class Calculator {
 		array $context
 	): float {
 
-		$printing = $context['printing']
+		$printing =
+			$context['printing']
 			?? [];
 
 		if (
@@ -74,45 +75,70 @@ final class Calculator {
 			return $base_price;
 		}
 
-		$quantity = max(
-			1,
-			absint(
-				$context['quantity']
-				?? 1
-			)
-		);
+		$quantity =
+			max(
+				1,
+				absint(
+					$context['quantity']
+					?? 1
+				)
+			);
 
-		$product_id = absint(
-			$context['product_id']
-				?? 0
-		);
-
-		$variation_id = absint(
-			$context['variation_id']
-				?? 0
-		);
-
-		$print_total = $this->calculate(
-			$printing,
-			[
-				'quantity'     => $quantity,
-				'product_id'   => $product_id,
-				'variation_id' => $variation_id,
-			]
-		);
 
 		/*
-		 * The pricing engine works in UNIT prices.
-		 *
-		 * Print tier prices are per item, but setup/handling fees may be
-		 * fixed order-level amounts.
-		 *
-		 * calculate() returns the total printing amount for the configured
-		 * quantity, so divide it back into a per-unit amount before adding
-		 * it to WooCommerce's product price.
-		 */
+		|--------------------------------------------------------------------------
+		| Use pre-calculated breakdown when available
+		|--------------------------------------------------------------------------
+		|
+		| Printing\CartPricing calculates this once and puts it into the pricing
+		| context.
+		|
+		| This prevents the same printing configuration from being calculated
+		| twice during one WooCommerce cart calculation.
+		*/
+
+		$printing_breakdown =
+			isset(
+				$context['printing_breakdown']
+			)
+			&& is_array(
+				$context['printing_breakdown']
+			)
+				? $context['printing_breakdown']
+				: null;
+
+
+		if ( null === $printing_breakdown ) {
+
+			$printing_breakdown =
+				$this->calculate_breakdown(
+					$printing,
+					[
+						'quantity' =>
+							$quantity,
+
+						'product_id' =>
+							absint(
+								$context['product_id']
+								?? 0
+							),
+
+						'variation_id' =>
+							absint(
+								$context['variation_id']
+								?? 0
+							),
+					]
+				);
+		}
+
+
 		$print_unit_price =
-			$print_total / $quantity;
+			(float) (
+				$printing_breakdown['per_unit']
+				?? 0
+			);
+
 
 		return $base_price
 			+ $print_unit_price;
@@ -574,4 +600,252 @@ final class Calculator {
 			$normalized
 		);
 	}
+
+
+	/**
+	 * Calculate a detailed selling-side printing breakdown.
+	 *
+	 * This is the authoritative source for cart pricing presentation.
+	 *
+	 * Returned values:
+	 *
+	 * [
+	 *     'unit_price'   => total per-unit print tier price,
+	 *     'print_total'  => print tier price × quantity,
+	 *     'fees'         => all applicable selling fees,
+	 *     'total'        => print_total + fees,
+	 *     'per_unit'     => total / quantity,
+	 *     'quantity'     => quantity,
+	 *     'selections'   => normalized valid selections,
+	 * ]
+	 *
+	 * Important:
+	 *
+	 * - Print tier prices are per-unit.
+	 * - Fees may be fixed/order-level or quantity-based.
+	 * - Therefore the complete printing amount is calculated first and only
+	 *   then converted into a WooCommerce-compatible per-unit amount.
+	 */
+	public function calculate_breakdown(
+		array $selections,
+		array $context = []
+	): array {
+
+		$quantity =
+			max(
+				1,
+				absint(
+					$context['quantity']
+					?? 1
+				)
+			);
+
+		$product_id =
+			absint(
+				$context['product_id']
+				?? 0
+			);
+
+		$variation_id =
+			absint(
+				$context['variation_id']
+				?? 0
+			);
+
+		$normalized =
+			$this->normalize_selections(
+				$selections
+			);
+
+		$position_count =
+			count(
+				$normalized
+			);
+
+		$unit_price_total = 0.0;
+
+		$print_total = 0.0;
+
+		$fees_total = 0.0;
+
+		$valid_selections = [];
+
+
+		foreach (
+			$normalized as $selection
+		) {
+
+			$position_id =
+				absint(
+					$selection['position_id']
+				);
+
+			$option_id =
+				absint(
+					$selection['option_id']
+				);
+
+			$colors =
+				max(
+					0,
+					absint(
+						$selection['colors']
+						?? 0
+					)
+				);
+
+
+			if (
+				! $position_id
+				|| ! $option_id
+			) {
+				continue;
+			}
+
+
+			/*
+			|--------------------------------------------------------------------------
+			| Validate
+			|--------------------------------------------------------------------------
+			|
+			| Match the existing Calculator::calculate_side() behavior.
+			*/
+
+			$entity_id =
+				$variation_id
+					?: $product_id;
+
+
+			if (
+				$entity_id
+				&& ! $this->repository
+					->selection_is_valid(
+						$entity_id,
+						$position_id,
+						$option_id
+					)
+			) {
+				continue;
+			}
+
+
+			/*
+			|--------------------------------------------------------------------------
+			| Print Tier Price
+			|--------------------------------------------------------------------------
+			*/
+
+			$unit_print_price =
+				$this->repository
+					->get_applicable_selling_price(
+						$option_id,
+						$quantity
+					);
+
+
+			if (
+				null !== $unit_print_price
+			) {
+
+				$unit_print_price =
+					max(
+						0.0,
+						(float) $unit_print_price
+					);
+
+				$unit_price_total +=
+					$unit_print_price;
+
+				$print_total +=
+					$unit_print_price
+					* $quantity;
+			}
+
+
+			/*
+			|--------------------------------------------------------------------------
+			| Fees
+			|--------------------------------------------------------------------------
+			*/
+
+			$fee_context = [
+
+				'quantity' =>
+					$quantity,
+
+				'colors' =>
+					$colors,
+
+				'positions' =>
+					$position_count,
+
+				'product_id' =>
+					$product_id,
+
+				'variation_id' =>
+					$variation_id,
+
+				'print_option_id' =>
+					$option_id,
+			];
+
+
+			$fees =
+				$this->fees
+					->calculate(
+						$option_id,
+						$fee_context
+					);
+
+
+			$fees_total +=
+				max(
+					0.0,
+					(float) $fees
+				);
+
+
+			$valid_selections[
+				$position_id
+			] =
+				$option_id;
+		}
+
+
+		$total =
+			max(
+				0.0,
+				$print_total
+				+ $fees_total
+			);
+
+
+		return [
+
+			'unit_price' =>
+				(float) $unit_price_total,
+
+			'print_total' =>
+				(float) $print_total,
+
+			'fees' =>
+				(float) $fees_total,
+
+			'total' =>
+				(float) $total,
+
+			'per_unit' =>
+				(float) (
+					$total / $quantity
+				),
+
+			'quantity' =>
+				$quantity,
+
+			'selections' =>
+				$valid_selections,
+		];
+	}
+
+
 }

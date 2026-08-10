@@ -162,6 +162,54 @@ final class CartPricing {
 				$selections
 			);
 
+		$calculator_selections =
+			$this->to_calculator_selections(
+				$selections
+			);
+
+
+		$quantity =
+			max(
+				1,
+				absint(
+					$cart_item['quantity']
+					?? $context['quantity']
+					?? 1
+				)
+			);
+
+
+		$printing_breakdown =
+			$this->calculator
+				->calculate_breakdown(
+					$calculator_selections,
+					[
+						'product_id' =>
+							$product_id,
+
+						'variation_id' =>
+							$variation_id,
+
+						'quantity' =>
+							$quantity,
+					]
+				);
+
+
+		$context['printing'] =
+			$calculator_selections;
+
+
+		/*
+		|--------------------------------------------------------------------------
+		| Authoritative Printing Breakdown
+		|--------------------------------------------------------------------------
+		*/
+
+		$context['printing_breakdown'] =
+			$printing_breakdown;
+
+
 		return $context;
 	}
 

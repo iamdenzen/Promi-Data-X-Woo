@@ -14,6 +14,7 @@ defined( 'ABSPATH' ) || exit;
  * - Allow other modules to enrich the pricing context.
  * - Run the unified pricing Engine.
  * - Apply the resulting per-unit price to WooCommerce.
+ * - Store an authoritative pricing breakdown on the cart item.
  *
  * Pricing business logic does not live here.
  *
@@ -23,23 +24,36 @@ defined( 'ABSPATH' ) || exit;
  *          ↓
  * TieredPricing        priority 10
  *          ↓
- * Printing Calculator priority 20
+ * Printing Calculator  priority 20
  *          ↓
  * Final WooCommerce unit price
+ *
+ * The pricing breakdown is derived from that same calculation.
+ * The cart template must never independently recalculate pricing.
  */
 final class CartPricing {
 
+	/**
+	 * Cart-item meta key containing the authoritative pricing breakdown.
+	 */
+	public const BREAKDOWN_KEY =
+		'_pdxw_pricing';
+
+
 	private Engine $engine;
+	
+	private TieredPricing $tiers;
 
 	private bool $initialized = false;
 
 	private bool $calculating = false;
 
-
 	public function __construct(
-		Engine $engine
+		Engine $engine,
+		TieredPricing $tiers
 	) {
 		$this->engine = $engine;
+		$this->tiers  = $tiers;
 	}
 
 
@@ -62,18 +76,6 @@ final class CartPricing {
 				'calculate_cart',
 			],
 			20
-		);
-
-		add_filter(
-			'woocommerce_cart_item_subtotal',
-			function($subtotal, $cart_item, $cart_item_key) {
-				return $this->calculate_item(
-					(string) $cart_item_key,
-					$cart_item
-				);
-			},
-			20,
-			3
 		);
 	}
 
@@ -118,7 +120,7 @@ final class CartPricing {
 
 			foreach (
 				$cart->get_cart()
-					as $cart_item_key => &$cart_item
+				as $cart_item_key => &$cart_item
 			) {
 
 				$this->calculate_item(
@@ -146,7 +148,8 @@ final class CartPricing {
 
 		$product =
 			$cart_item['data']
-				?? null;
+			?? null;
+
 
 		if (
 			! $product
@@ -156,72 +159,41 @@ final class CartPricing {
 		}
 
 
-		/*
-		|--------------------------------------------------------------------------
-		| Quantity
-		|--------------------------------------------------------------------------
-		*/
-
-		$quantity = max(
-			1,
-			absint(
-				$cart_item['quantity']
+		$quantity =
+			max(
+				1,
+				absint(
+					$cart_item['quantity']
 					?? 1
-			)
-		);
-
-
-		/*
-		|--------------------------------------------------------------------------
-		| Product Identity
-		|--------------------------------------------------------------------------
-		*/
-
-		$product_id = absint(
-			$cart_item['product_id']
-				?? 0
-		);
-
-		$variation_id = absint(
-			$cart_item['variation_id']
-				?? 0
-		);
-
-		if ( ! $product_id ) {
-
-			$product_id = $variation_id
-				? absint(
-					wp_get_post_parent_id(
-						$variation_id
-					)
 				)
-				: $product->get_id();
-		}
+			);
 
-		if ( ! $product_id ) {
-			return;
-		}
+
+		$product_id =
+			absint(
+				$cart_item['product_id']
+				?? 0
+			);
+
+
+		$variation_id =
+			absint(
+				$cart_item['variation_id']
+				?? 0
+			);
 
 
 		/*
 		|--------------------------------------------------------------------------
-		| Base Price
+		| Raw WooCommerce Starting Price
 		|--------------------------------------------------------------------------
-		|
-		| This must NOT use the already-calculated cart price.
-		|
-		| WooCommerce can call calculate_totals() several times during one
-		| request. If we used $product->get_price() after a previous
-		| set_price(), tier/printing costs could be applied repeatedly.
-		|
-		| The existing XSImpress pricing architecture uses the regular product
-		| price as the engine's starting value, so we preserve that behavior.
 		*/
 
 		$base_price =
 			$this->base_price(
 				$product
 			);
+
 
 		if ( null === $base_price ) {
 			return;
@@ -230,11 +202,12 @@ final class CartPricing {
 
 		/*
 		|--------------------------------------------------------------------------
-		| Context
+		| Unified Pricing Context
 		|--------------------------------------------------------------------------
 		*/
 
 		$context = [
+
 			'cart_item_key' =>
 				$cart_item_key,
 
@@ -255,21 +228,13 @@ final class CartPricing {
 		];
 
 
-		/*
-		 * Other business domains can append their pricing information here.
-		 *
-		 * Printing currently uses this filter to add:
-		 *
-		 *     $context['printing']
-		 *
-		 * The Pricing module therefore does not need to know anything about
-		 * print positions, options, fees or cart-storage structure.
-		 */
-		$context = apply_filters(
-			'pdxw_pricing_context',
-			$context,
-			$cart_item
-		);
+		$context =
+			apply_filters(
+				'pdxw_pricing_context',
+				$context,
+				$cart_item
+			);
+
 
 		if ( ! is_array( $context ) ) {
 			return;
@@ -278,155 +243,458 @@ final class CartPricing {
 
 		/*
 		|--------------------------------------------------------------------------
-		| Unified Calculation
+		| Article / Tier Price
+		|--------------------------------------------------------------------------
+		|
+		| This is exactly the first stage of Engine:
+		|
+		| TieredPricing priority 10.
+		*/
+
+		$article_unit =
+			$this->tiers
+				->selling_price(
+					$product_id,
+					$variation_id,
+					$quantity
+				);
+
+
+		if ( null === $article_unit ) {
+
+			$article_unit =
+				$base_price;
+		}
+
+
+		$article_unit =
+			max(
+				0.0,
+				(float) $article_unit
+		);
+
+
+		/*
+		|--------------------------------------------------------------------------
+		| Final Engine Price
 		|--------------------------------------------------------------------------
 		*/
 
-		$final_price =
+		$final_unit =
 			$this->engine
 				->calculate(
 					$base_price,
 					$context
 				);
 
-		error_log( "Base price: $base_price, Final price: $final_price" );
+
+		$final_unit =
+			max(
+				0.0,
+				(float) $final_unit
+		);
+
+
 		/*
 		|--------------------------------------------------------------------------
-		| WooCommerce
+		| Apply to WooCommerce
 		|--------------------------------------------------------------------------
-		|
-		| Engine::calculate() always returns a UNIT price.
-		|
-		| WooCommerce multiplies this by the cart quantity when calculating
-		| line totals.
 		*/
 
 		$product->set_price(
 			wc_format_decimal(
-				$final_price,
+				$final_unit,
 				wc_get_price_decimals()
 			)
 		);
 
 
-		do_action(
-			'pdxw_cart_item_priced',
-			$cart_item_key,
-			$final_price,
-			$base_price,
-			$context,
-			$cart_item
-		);
-	}
+		/*
+		|--------------------------------------------------------------------------
+		| Printing Breakdown
+		|--------------------------------------------------------------------------
+		*/
 
-
-	/*
-	|--------------------------------------------------------------------------
-	| Base Price
-	|--------------------------------------------------------------------------
-	*/
-
-	/**
-	 * Return the raw price used to start our pricing pipeline.
-	 *
-	 * Regular price is intentionally preferred because set_price() mutates
-	 * the cart product object's active price during totals calculation.
-	 */
-	private function base_price(
-		\WC_Product $product
-	): ?float {
-
-		$regular_price =
-			$product->get_regular_price(
-				'edit'
-			);
-
-		if (
-			'' !== $regular_price
-			&& null !== $regular_price
-			&& is_numeric(
-				$regular_price
+		$printing =
+			isset(
+				$context['printing_breakdown']
 			)
-		) {
-			return max(
+			&& is_array(
+				$context['printing_breakdown']
+			)
+				? $context['printing_breakdown']
+				: [];
+
+
+		$printing_total =
+			max(
 				0.0,
-				(float) $regular_price
+				(float) (
+					$printing['total']
+					?? 0
+				)
 			);
-		}
+
+
+		$printing_tier_total =
+			max(
+				0.0,
+				(float) (
+					$printing['print_total']
+					?? 0
+				)
+			);
+
+
+		$printing_fees_total =
+			max(
+				0.0,
+				(float) (
+					$printing['fees']
+					?? 0
+				)
+			);
 
 
 		/*
-		 * Some manually-created/imported products may not have a separate
-		 * regular price. Fall back to the raw stored active price.
-		 *
-		 * This fallback is secondary; normal Promi products should have
-		 * their regular price synchronized by TieredPricing.
-		 */
-		$price =
-			$product->get_price(
-				'edit'
-			);
+		|--------------------------------------------------------------------------
+		| Final Breakdown
+		|--------------------------------------------------------------------------
+		|
+		| Every displayed value comes from the same calculation pipeline.
+		*/
 
-		if (
-			'' === $price
-			|| null === $price
-			|| ! is_numeric(
-				$price
-			)
-		) {
-			return null;
-		}
+		$cart_item[
+			'_pdxw_pricing'
+		] = [
 
-		return max(
-			0.0,
-			(float) $price
-		);
+			'article_unit' =>
+				$this->money(
+					$article_unit
+				),
+
+			'article_total' =>
+				$this->money(
+					$article_unit
+					* $quantity
+				),
+
+			'printing_tier_total' =>
+				$this->money(
+					$printing_tier_total
+				),
+
+			'printing_fees_total' =>
+				$this->money(
+					$printing_fees_total
+				),
+
+			'printing_total' =>
+				$this->money(
+					$printing_total
+				),
+
+			'printing_unit' =>
+				$this->money(
+					$printing_total
+					/ $quantity
+				),
+
+			'final_unit' =>
+				$this->money(
+					$final_unit
+				),
+
+			'line_total' =>
+				$this->money(
+					$final_unit
+					* $quantity
+				),
+
+			'quantity' =>
+				$quantity,
+
+			'product_id' =>
+				$product_id,
+
+			'variation_id' =>
+				$variation_id,
+		];
 	}
 
 
 	/*
 	|--------------------------------------------------------------------------
-	| Manual Calculation API
+	| Breakdown
 	|--------------------------------------------------------------------------
 	*/
 
 	/**
-	 * Calculate a unit price outside WooCommerce cart processing.
+	 * Build the authoritative cart pricing breakdown.
 	 *
-	 * Useful later for:
-	 *
-	 * - AJAX configurator previews.
-	 * - REST endpoints.
-	 * - Admin previews.
-	 * - Tests.
+	 * The only potentially complex component is printing. That value is
+	 * obtained from the Printing Calculator already used by the pricing
+	 * engine rather than being reconstructed from repository rows.
 	 */
-	public function calculate(
+	private function build_breakdown(
+		float $base_price,
+		float $final_price,
+		int $quantity,
+		array $context,
+		int $product_id,
+		int $variation_id
+	): array {
+
+		$quantity =
+			max(
+				1,
+				$quantity
+			);
+
+
+		/*
+		|--------------------------------------------------------------------------
+		| Article / Tier Price
+		|--------------------------------------------------------------------------
+		|
+		| The tier callback replaces the incoming price when a tier exists.
+		|
+		| Therefore we can resolve the article-side price directly from the
+		| same TieredPricing service used by Engine priority 10.
+		*/
+
+		$article_unit =
+			$this->article_unit_price(
+				$base_price,
+				$product_id,
+				$variation_id,
+				$quantity
+			);
+
+
+		$article_total =
+			$article_unit
+			* $quantity;
+
+
+		/*
+		|--------------------------------------------------------------------------
+		| Printing
+		|--------------------------------------------------------------------------
+		*/
+
+		$printing =
+			isset(
+				$context['printing']
+			)
+			&& is_array(
+				$context['printing']
+			)
+				? $context['printing']
+				: [];
+
+
+		$printing_total =
+			0.0;
+
+
+		if ( ! empty( $printing ) ) {
+
+			$printing_total =
+				$this->printing_total(
+					$printing,
+					$product_id,
+					$variation_id,
+					$quantity
+				);
+		}
+
+
+		$printing_total =
+			max(
+				0.0,
+				(float) $printing_total
+			);
+
+
+		$printing_unit =
+			$printing_total
+			/ $quantity;
+
+
+		/*
+		|--------------------------------------------------------------------------
+		| Printing Tier / Fee Breakdown
+		|--------------------------------------------------------------------------
+		|
+		| These values are informational only.
+		|
+		| The complete printing_total above remains authoritative.
+		|
+		| We derive the fee amount from:
+		|
+		|     total printing
+		|     -
+		|     print tier total
+		|
+		| rather than recalculating the fee rules a second time.
+		*/
+
+		$printing_tier_total =
+			$this->printing_tier_total(
+				$printing,
+				$quantity
+			);
+
+
+		$printing_tier_total =
+			max(
+				0.0,
+				(float) $printing_tier_total
+			);
+
+
+		$printing_fees_total =
+			max(
+				0.0,
+				$printing_total
+				- $printing_tier_total
+			);
+
+
+		/*
+		|--------------------------------------------------------------------------
+		| Final Line
+		|--------------------------------------------------------------------------
+		*/
+
+		$line_total =
+			$final_price
+			* $quantity;
+
+
+		/*
+		|--------------------------------------------------------------------------
+		| Rounding
+		|--------------------------------------------------------------------------
+		|
+		| Keep every displayed component at WooCommerce's configured currency
+		| precision.
+		*/
+
+		return [
+
+			'article_unit' =>
+				$this->money(
+					$article_unit
+				),
+
+			'article_total' =>
+				$this->money(
+					$article_total
+				),
+
+			'printing_tier_total' =>
+				$this->money(
+					$printing_tier_total
+				),
+
+			'printing_fees_total' =>
+				$this->money(
+					$printing_fees_total
+				),
+
+			'printing_total' =>
+				$this->money(
+					$printing_total
+				),
+
+			'printing_unit' =>
+				$this->money(
+					$printing_unit
+				),
+
+			'final_unit' =>
+				$this->money(
+					$final_price
+				),
+
+			'line_total' =>
+				$this->money(
+					$line_total
+				),
+
+			'quantity' =>
+				$quantity,
+
+			'product_id' =>
+				$product_id,
+
+			'variation_id' =>
+				$variation_id,
+		];
+	}
+
+
+	/**
+	 * Resolve the article-side unit price.
+	 *
+	 * This mirrors Engine priority 10 without running the engine again.
+	 */
+	private function article_unit_price(
 		float $base_price,
 		int $product_id,
 		int $variation_id,
-		int $quantity,
-		array $context = []
+		int $quantity
 	): float {
 
-		$product_id =
-			absint(
-				$product_id
-			);
+		$tier_price =
+			$this->engine
+				->tiers()
+				->selling_price(
+					$product_id,
+					$variation_id,
+					$quantity
+				);
 
-		$variation_id =
-			absint(
-				$variation_id
-			);
 
-		$quantity = max(
-			1,
-			absint(
-				$quantity
-			)
+		if ( null !== $tier_price ) {
+
+			return max(
+				0.0,
+				(float) $tier_price
+			);
+		}
+
+
+		return max(
+			0.0,
+			(float) $base_price
 		);
+	}
 
-		$context = array_merge(
-			$context,
+
+	/**
+	 * Calculate the authoritative total printing cost.
+	 */
+	private function printing_total(
+		array $printing,
+		int $product_id,
+		int $variation_id,
+		int $quantity
+	): float {
+
+		$calculator =
+			$this->printing_calculator();
+
+
+		if ( ! $calculator ) {
+			return 0.0;
+		}
+
+
+		return $calculator->calculate(
+			$printing,
 			[
 				'product_id' =>
 					$product_id,
@@ -438,15 +706,299 @@ final class CartPricing {
 					$quantity,
 			]
 		);
+	}
 
-		return $this->engine
-			->calculate(
-				max(
-					0.0,
-					$base_price
-				),
-				$context
+
+	/**
+	 * Resolve the Printing Calculator without coupling Pricing to the
+	 * Printing module at construction time.
+	 *
+	 * The calculator is already the callback registered by Printing at
+	 * priority 20.
+	 */
+	private function printing_calculator(): ?object {
+
+		/*
+		 * Printing stores its calculator inside the pricing context only
+		 * indirectly, so use the module accessor when the application is
+		 * available.
+		 */
+
+		$plugin =
+			function_exists( 'pdxw' )
+				? pdxw()
+				: null;
+
+
+		if ( ! $plugin ) {
+			return null;
+		}
+
+
+		$printing =
+			$plugin->printing();
+
+
+		if ( ! $printing ) {
+			return null;
+		}
+
+
+		return $printing->calculator();
+	}
+
+
+	/**
+	 * Calculate print tier prices only.
+	 *
+	 * This is used solely to provide the cart's "Veredelung" / "Einrichtung"
+	 * display breakdown.
+	 *
+	 * It does NOT affect the actual WooCommerce price.
+	 */
+	private function printing_tier_total(
+		array $printing,
+		int $quantity
+	): float {
+
+		$total = 0.0;
+
+
+		foreach (
+			$printing as $selection
+		) {
+
+			if ( ! is_array( $selection ) ) {
+				continue;
+			}
+
+
+			$option_id =
+				absint(
+					$selection['option_id']
+						?? 0
+				);
+
+
+			if ( ! $option_id ) {
+				continue;
+			}
+
+
+			$price =
+				$this->printing_option_price(
+					$option_id,
+					$quantity
+				);
+
+
+			if ( null !== $price ) {
+
+				$total +=
+					max(
+						0.0,
+						(float) $price
+					)
+					* $quantity;
+			}
+		}
+
+
+		return $total;
+	}
+
+
+	/**
+	 * Resolve one print option's applicable selling price.
+	 */
+	private function printing_option_price(
+		int $option_id,
+		int $quantity
+	): ?float {
+
+		$plugin =
+			function_exists( 'pdxw' )
+				? pdxw()
+				: null;
+
+
+		if ( ! $plugin ) {
+			return null;
+		}
+
+
+		$printing =
+			$plugin->printing();
+
+
+		if ( ! $printing ) {
+			return null;
+		}
+
+
+		return $printing
+			->repository()
+			->get_applicable_selling_price(
+				$option_id,
+				$quantity
 			);
+	}
+
+
+	/**
+	 * Normalize one monetary value to WooCommerce precision.
+	 */
+	private function money(
+		float $value
+	): float {
+
+		return (float)
+			wc_format_decimal(
+				$value,
+				wc_get_price_decimals()
+			);
+	}
+
+
+	/*
+	|--------------------------------------------------------------------------
+	| Base Price
+	|--------------------------------------------------------------------------
+	*/
+
+	/**
+	 * Return the raw price used to start our pricing pipeline.
+	 */
+	private function base_price(
+		\WC_Product $product
+	): ?float {
+
+		$regular_price =
+			$product->get_regular_price(
+				'edit'
+			);
+
+
+		if (
+			'' !== $regular_price
+			&& null !== $regular_price
+			&& is_numeric( $regular_price )
+		) {
+
+			return max(
+				0.0,
+				(float) $regular_price
+			);
+		}
+
+
+		/*
+		 * Some manually-created/imported products may not have a separate
+		 * regular price.
+		 */
+		$price =
+			$product->get_price(
+				'edit'
+			);
+
+
+		if (
+			'' === $price
+			|| null === $price
+			|| ! is_numeric( $price )
+		) {
+			return null;
+		}
+
+
+		return max(
+			0.0,
+			(float) $price
+		);
+	}
+
+
+	/*
+	|--------------------------------------------------------------------------
+	| Public Breakdown API
+	|--------------------------------------------------------------------------
+	*/
+
+	/**
+	 * Return the authoritative pricing breakdown stored on a cart item.
+	 *
+	 * This is intended for cart templates and other presentation layers.
+	 */
+	public function breakdown(
+		array $cart_item
+	): array {
+
+		$breakdown =
+			$cart_item[
+				self::BREAKDOWN_KEY
+			]
+				?? [];
+
+
+		if ( ! is_array( $breakdown ) ) {
+			return [];
+		}
+
+
+		return $breakdown;
+	}
+
+
+	/**
+	 * Return one breakdown value safely.
+	 */
+	public function breakdown_value(
+		array $cart_item,
+		string $key,
+		float $default = 0.0
+	): float {
+
+		$breakdown =
+			$this->breakdown(
+				$cart_item
+			);
+
+
+		return isset(
+			$breakdown[
+				$key
+			]
+		)
+			&& is_numeric(
+				$breakdown[
+					$key
+				]
+			)
+				? (float)
+					$breakdown[
+						$key
+					]
+				: $default;
+	}
+
+
+	/**
+	 * Whether this cart item has a calculated pricing breakdown.
+	 */
+	public function has_breakdown(
+		array $cart_item
+	): bool {
+
+		return ! empty(
+			$cart_item[
+				self::BREAKDOWN_KEY
+			]
+		)
+		&& is_array(
+			$cart_item[
+				self::BREAKDOWN_KEY
+			]
+		);
 	}
 
 
