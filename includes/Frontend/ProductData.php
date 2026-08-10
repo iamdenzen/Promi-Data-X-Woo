@@ -128,6 +128,10 @@ final class ProductData {
 					$variation_id,
 					$attributes
 				);
+			error_log(
+				'state: resolved variation_id='
+				. $variation_id
+			);
 
 		} else {
 
