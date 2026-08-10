@@ -63,6 +63,17 @@ final class CartPricing {
 			],
 			20
 		);
+
+		add_action(
+			'woocommerce_cart_item_subtotal',
+			function($subtotal, $cart_item, $cart_item_key) {
+				return $this->calculate_item(
+					(string) $cart_item_key,
+					$cart_item
+				);
+			},
+			20
+		);
 	}
 
 
