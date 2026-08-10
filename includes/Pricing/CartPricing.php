@@ -269,7 +269,6 @@ final class CartPricing {
 		| Unified Calculation
 		|--------------------------------------------------------------------------
 		*/
-		error_log( json_encode( $context ) );
 
 		$final_price =
 			$this->engine

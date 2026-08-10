@@ -85,6 +85,7 @@ CX.pricing = {
 							CX.utils.float(
 								a.min_qty
 									?? a.qty
+									?? a.quantity
 									?? 0
 							);
 
@@ -92,6 +93,7 @@ CX.pricing = {
 							CX.utils.float(
 								b.min_qty
 									?? b.qty
+									?? b.quantity
 									?? 0
 							);
 
@@ -119,6 +121,7 @@ CX.pricing = {
 				CX.utils.float(
 					tier.min_qty
 						?? tier.qty
+						?? tier.quantity
 						?? 0
 				);
 
