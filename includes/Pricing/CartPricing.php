@@ -72,7 +72,8 @@ final class CartPricing {
 					$cart_item
 				);
 			},
-			20
+			20,
+			3
 		);
 	}
 
