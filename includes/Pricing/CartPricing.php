@@ -114,13 +114,13 @@ final class CartPricing {
 				$cart_contents
 				as $cart_item_key => &$cart_item
 			) {
-error_log($cart_item->get_price());
+error_log($cart_item['data']->get_price());
 				$this->calculate_item(
 					(string) $cart_item_key,
 					$cart_item
 				);
 				
-error_log($cart_item->get_price());
+error_log($cart_item['data']->get_price());
 			}
 
 			unset( $cart_item );
