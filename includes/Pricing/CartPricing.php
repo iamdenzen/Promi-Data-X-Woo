@@ -297,12 +297,27 @@ final class CartPricing {
 		|--------------------------------------------------------------------------
 		*/
 
-		$product->set_price(
-			wc_format_decimal(
-				$final_unit,
-				wc_get_price_decimals()
-			)
-		);
+		error_log(
+	'PXD PRICE BEFORE: ' .
+	$product->get_price()
+);
+
+error_log(
+	'PXD FINAL UNIT: ' .
+	$final_unit
+);
+
+$product->set_price(
+	wc_format_decimal(
+		$final_unit,
+		wc_get_price_decimals()
+	)
+);
+
+error_log(
+	'PXD PRICE AFTER: ' .
+	$product->get_price()
+);
 
 
 		/*
