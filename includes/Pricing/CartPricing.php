@@ -390,6 +390,12 @@ final class CartPricing {
 					$printing_total
 				),
 
+			'printing_tier_unit' =>
+				$this->money(
+					$printing_tier_total
+					/ $quantity
+				),
+
 			'printing_unit' =>
 				$this->money(
 					$printing_total

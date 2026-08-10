@@ -167,7 +167,6 @@ final class CartPricing {
 				$selections
 			);
 
-
 		$quantity =
 			max(
 				1,
