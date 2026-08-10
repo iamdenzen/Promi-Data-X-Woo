@@ -289,6 +289,18 @@ final class ProductData {
 				$attributes
 			);
 
+		error_log(
+			'resolve_variation: '
+			. print_r(
+				[
+					'product_id' => $product_id,
+					'variation_id' => $variation_id,
+					'attributes' => $attributes,
+				],
+				true
+			)
+		);
+
 		if ( empty( $attributes ) ) {
 			return 0;
 		}
