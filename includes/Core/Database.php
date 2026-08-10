@@ -15,7 +15,7 @@ defined( 'ABSPATH' ) || exit;
  */
 final class Database {
 
-	public const VERSION = '1.1.0';
+	public const VERSION = '1.2.0';
 
 	public const VERSION_OPTION = 'pdxw_db_version';
 
@@ -80,6 +80,15 @@ final class Database {
 
 			'print_relation' =>
 				'cx_print_relation',
+
+			/*
+			|--------------------------------------------------------------------------	
+			| Pricing Markup Rules
+			|--------------------------------------------------------------------------
+			*/
+
+			'pricing_markup_rules' =>
+				'cx_pricing_markup_rules',
 		];
 
 		if ( ! isset( $tables[ $table ] ) ) {
@@ -448,6 +457,50 @@ final class Database {
 			KEY option_idx ( print_option_id ),
 			KEY position_idx ( print_position_id ),
 			KEY product_variation_idx ( product_id, variation_id )
+		) {$charset};";
+
+		dbDelta( $sql );
+
+
+
+		/*
+		|--------------------------------------------------------------------------
+		| Pricing Markup Rules
+		|--------------------------------------------------------------------------
+		|
+		| rule_type:
+		|
+		|     category
+		|         target_id = product_cat term ID
+		|
+		|     print_option
+		|         target_id = cx_print_options ID
+		|
+		| markup_percent:
+		|
+		|     25 = 25%
+		|
+		| Default markups are stored as WordPress options, not rows here.
+		|--------------------------------------------------------------------------
+		*/
+
+		$table = self::table(
+			'pricing_markup_rules'
+		);
+
+		$sql = "CREATE TABLE {$table} (
+			id bigint unsigned NOT NULL AUTO_INCREMENT,
+			rule_type varchar(30) NOT NULL,
+			target_id bigint unsigned NOT NULL,
+			markup_percent decimal(10,4) NOT NULL DEFAULT 25.0000,
+			enabled tinyint(1) NOT NULL DEFAULT 1,
+			created_at datetime DEFAULT CURRENT_TIMESTAMP,
+			updated_at datetime DEFAULT CURRENT_TIMESTAMP,
+			PRIMARY KEY (id),
+			UNIQUE KEY rule_target_unique (rule_type, target_id),
+			KEY rule_type_idx (rule_type),
+			KEY target_idx (target_id),
+			KEY enabled_idx (enabled)
 		) {$charset};";
 
 		dbDelta( $sql );
