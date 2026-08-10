@@ -143,7 +143,6 @@ final class Database {
 			hash varchar(100) DEFAULT NULL,
 			json_url text DEFAULT NULL,
 			last_seen datetime DEFAULT NULL,
-
 			PRIMARY KEY  (sku),
 			KEY hash_idx (hash),
 			KEY last_seen_idx (last_seen)
@@ -179,31 +178,18 @@ final class Database {
 
 		$sql = "CREATE TABLE {$table} (
 			id bigint unsigned NOT NULL AUTO_INCREMENT,
-
 			sku varchar(100) NOT NULL,
-
 			action varchar(20) NOT NULL,
-
 			status varchar(20) NOT NULL DEFAULT 'pending',
-
 			attempts int unsigned NOT NULL DEFAULT 0,
-
 			available_at datetime DEFAULT NULL,
-
 			claimed_at datetime DEFAULT NULL,
-
 			claim_token varchar(64) DEFAULT NULL,
-
 			last_attempt datetime DEFAULT NULL,
-
 			last_error text DEFAULT NULL,
-
 			created_at datetime DEFAULT CURRENT_TIMESTAMP,
-
 			updated_at datetime DEFAULT CURRENT_TIMESTAMP,
-
 			PRIMARY KEY  (id),
-
 			KEY sku_status_idx (sku, status),
 			KEY status_available_idx (status, available_at),
 			KEY claim_token_idx (claim_token),
@@ -227,11 +213,8 @@ final class Database {
 
 		$sql = "CREATE TABLE {$table} (
 			sku varchar(100) NOT NULL,
-
 			reason text DEFAULT NULL,
-
 			created_at datetime DEFAULT CURRENT_TIMESTAMP,
-
 			PRIMARY KEY  (sku)
 		) {$charset};";
 
@@ -259,21 +242,13 @@ final class Database {
 
 		$sql = "CREATE TABLE {$table} (
 			id bigint unsigned NOT NULL AUTO_INCREMENT,
-
 			sku varchar(100) DEFAULT NULL,
-
 			type varchar(50) NOT NULL,
-
 			field_key varchar(191) NOT NULL,
-
 			created_at datetime DEFAULT CURRENT_TIMESTAMP,
-
 			PRIMARY KEY  (id),
-
 			KEY sku_idx (sku),
-
 			KEY type_field_idx (type, field_key),
-
 			KEY sku_type_field_idx (sku, type, field_key)
 		) {$charset};";
 
@@ -297,25 +272,15 @@ final class Database {
 
 		$sql = "CREATE TABLE {$table} (
 			id bigint unsigned NOT NULL AUTO_INCREMENT,
-
 			product_id bigint unsigned NOT NULL,
-
 			variation_id bigint unsigned NOT NULL DEFAULT 0,
-
 			qty int unsigned NOT NULL,
-
 			price decimal(12,4) NOT NULL,
-
 			purchase_price decimal(12,4) DEFAULT NULL,
-
 			PRIMARY KEY  (id),
-
 			UNIQUE KEY product_variation_qty_unique (product_id, variation_id, qty),
-
 			KEY product_variation_idx (product_id, variation_id),
-
 			KEY variation_idx (variation_id),
-
 			KEY qty_idx (qty)
 		) {$charset};";
 
@@ -338,29 +303,17 @@ final class Database {
 
 		$sql = "CREATE TABLE {$table} (
 			id bigint unsigned NOT NULL AUTO_INCREMENT,
-
 			product_id bigint unsigned NOT NULL,
-
 			variation_id bigint unsigned NOT NULL DEFAULT 0,
-
 			position_code varchar(100) NOT NULL,
-
 			position_label varchar(255) NOT NULL,
-
 			area varchar(255) DEFAULT '',
-
 			image bigint unsigned NOT NULL DEFAULT 0,
-
 			created_at datetime DEFAULT CURRENT_TIMESTAMP,
-
 			PRIMARY KEY  (id),
-
 			UNIQUE KEY product_variation_position_unique (product_id, variation_id, position_code),
-
 			KEY product_idx (product_id),
-
 			KEY variation_idx (variation_id),
-
 			KEY position_code_idx (position_code)
 		) {$charset};";
 
@@ -382,21 +335,13 @@ final class Database {
 
 		$sql = "CREATE TABLE {$table} (
 			id bigint unsigned NOT NULL AUTO_INCREMENT,
-
 			sku varchar(100) DEFAULT '',
-
 			name varchar(255) NOT NULL,
-
 			max_colors int unsigned NOT NULL DEFAULT 0,
-
 			min_order_qty int unsigned NOT NULL DEFAULT 1,
-
 			created_at datetime DEFAULT CURRENT_TIMESTAMP,
-
 			PRIMARY KEY  (id),
-
 			KEY sku_idx (sku),
-
 			KEY name_idx (name)
 		) {$charset};";
 
@@ -418,23 +363,14 @@ final class Database {
 
 		$sql = "CREATE TABLE {$table} (
 			id bigint unsigned NOT NULL AUTO_INCREMENT,
-
 			print_option_id bigint unsigned NOT NULL,
-
 			min_qty int unsigned NOT NULL,
-
 			price decimal(12,4) NOT NULL,
-
 			purchase_price decimal(12,4) DEFAULT NULL,
-
 			created_at datetime DEFAULT CURRENT_TIMESTAMP,
-
 			PRIMARY KEY  (id),
-
 			UNIQUE KEY option_qty_unique (print_option_id, min_qty),
-
 			KEY option_idx (print_option_id),
-
 			KEY qty_idx (min_qty)
 		) {$charset};";
 
@@ -460,31 +396,18 @@ final class Database {
 
 		$sql = "CREATE TABLE {$table} (
 			id bigint unsigned NOT NULL AUTO_INCREMENT,
-
 			print_option_id bigint unsigned NOT NULL,
-
 			fee_label varchar(255) DEFAULT NULL,
-
 			fee_type varchar(50) NOT NULL,
-
 			calculation varchar(50) NOT NULL,
-
 			calculation_type varchar(191) DEFAULT NULL,
-
 			calculation_amount decimal(12,4) DEFAULT NULL,
-
 			requirement longtext DEFAULT NULL,
-
 			amount decimal(12,4) NOT NULL,
-
 			purchase_amount decimal(12,4) DEFAULT NULL,
-
 			created_at datetime DEFAULT CURRENT_TIMESTAMP,
-
 			PRIMARY KEY  (id),
-
 			KEY option_idx (print_option_id),
-
 			KEY fee_type_idx (fee_type)
 		) {$charset};";
 
@@ -513,29 +436,17 @@ final class Database {
 
 		$sql = "CREATE TABLE {$table} (
 			id bigint unsigned NOT NULL AUTO_INCREMENT,
-
 			product_id bigint unsigned NOT NULL,
-
 			variation_id bigint unsigned NOT NULL DEFAULT 0,
-
 			print_option_id bigint unsigned NOT NULL,
-
 			print_position_id bigint unsigned NOT NULL,
-
 			created_at datetime DEFAULT CURRENT_TIMESTAMP,
-
 			PRIMARY KEY  (id),
-
 			UNIQUE KEY relation_unique (product_id, variation_id, print_option_id, print_position_id),
-
 			KEY product_idx ( product_id ),
-
 			KEY variation_idx ( variation_id ),
-
 			KEY option_idx ( print_option_id ),
-
 			KEY position_idx ( print_position_id ),
-
 			KEY product_variation_idx ( product_id, variation_id )
 		) {$charset};";
 
