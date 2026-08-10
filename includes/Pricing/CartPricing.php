@@ -77,53 +77,6 @@ final class CartPricing {
 			],
 			99999
 		);
-
-		add_action(
-			'woocommerce_after_calculate_totals',
-			function ( \WC_Cart $cart ) {
-
-				foreach ( $cart->get_cart() as $key => $item ) {
-
-					$product = $item['data'];
-
-					error_log(
-						sprintf(
-							'PXD AFTER TOTALS | key=%s | product_price=%s | qty=%s | line_subtotal=%s | line_total=%s',
-							$key,
-							$product->get_price(),
-							$item['quantity'],
-							$item['line_subtotal'] ?? 'MISSING',
-							$item['line_total'] ?? 'MISSING'
-						)
-					);
-				}
-			},
-			999
-		);
-
-		add_action(
-	'woocommerce_after_calculate_totals',
-	function ( \WC_Cart $cart ) {
-
-		foreach ( $cart->get_cart() as $key => $item ) {
-
-			$product = $item['data'];
-
-			error_log(
-				'PXD FINAL CART STATE: ' . wp_json_encode(
-					[
-						'key'           => $key,
-						'product_price' => $product->get_price(),
-						'quantity'      => $item['quantity'] ?? null,
-						'line_subtotal' => $item['line_subtotal'] ?? null,
-						'line_total'    => $item['line_total'] ?? null,
-					]
-				)
-			);
-		}
-	},
-	999
-);
 	}
 
 
@@ -344,27 +297,12 @@ final class CartPricing {
 		|--------------------------------------------------------------------------
 		*/
 
-		error_log(
-	'PXD PRICE BEFORE: ' .
-	$product->get_price()
-);
-
-error_log(
-	'PXD FINAL UNIT: ' .
-	$final_unit
-);
-
-$product->set_price(
-	wc_format_decimal(
-		$final_unit,
-		wc_get_price_decimals()
-	)
-);
-
-error_log(
-	'PXD PRICE AFTER: ' .
-	$product->get_price()
-);
+		$product->set_price(
+			wc_format_decimal(
+				$final_unit,
+				wc_get_price_decimals()
+			)
+		);
 
 
 		/*
