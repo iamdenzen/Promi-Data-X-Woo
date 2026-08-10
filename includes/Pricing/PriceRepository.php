@@ -1038,6 +1038,157 @@ final class PriceRepository {
 
 
 	/**
+	 * Return the complete raw tier used for a quantity.
+	 *
+	 * This is different from get_applicable_selling_price() because the new
+	 * pricing engine needs BOTH:
+	 *
+	 *     price
+	 *     purchase_price
+	 *
+	 * Rules:
+	 *
+	 * - variation tiers are preferred when they exist
+	 * - parent tiers are used only when the variation has no tiers
+	 * - highest qty <= requested quantity wins
+	 * - first tier is used when requested quantity is below the first tier
+	 */
+	public function get_applicable_tier(
+		int $product_id,
+		int $variation_id = 0,
+		int $quantity = 1
+	): ?object {
+
+		$product_id =
+			absint(
+				$product_id
+			);
+
+		$variation_id =
+			absint(
+				$variation_id
+			);
+
+		$quantity =
+			max(
+				1,
+				absint(
+					$quantity
+				)
+			);
+
+		if ( ! $product_id ) {
+			return null;
+		}
+
+		$targets =
+			$variation_id
+				? [
+					$variation_id,
+					0,
+				]
+				: [
+					0,
+				];
+
+		$db =
+			$this->db();
+
+		$table =
+			$this->table();
+
+
+		foreach (
+			$targets as $target_variation_id
+		) {
+
+			$count =
+				(int)
+				$db->get_var(
+					$db->prepare(
+						"SELECT COUNT(*)
+						FROM {$table}
+						WHERE product_id = %d
+							AND variation_id = %d",
+						$product_id,
+						$target_variation_id
+					)
+				);
+
+			if ( ! $count ) {
+				continue;
+			}
+
+
+			/*
+			|--------------------------------------------------------------------------
+			| Highest tier <= quantity
+			|--------------------------------------------------------------------------
+			*/
+
+			$row =
+				$db->get_row(
+					$db->prepare(
+						"SELECT
+							id,
+							product_id,
+							variation_id,
+							qty,
+							price,
+							purchase_price
+						FROM {$table}
+						WHERE product_id = %d
+							AND variation_id = %d
+							AND qty <= %d
+						ORDER BY qty DESC
+						LIMIT 1",
+						$product_id,
+						$target_variation_id,
+						$quantity
+					)
+				);
+
+
+			/*
+			|--------------------------------------------------------------------------
+			| Below first tier → first tier
+			|--------------------------------------------------------------------------
+			*/
+
+			if ( ! $row ) {
+
+				$row =
+					$db->get_row(
+						$db->prepare(
+							"SELECT
+								id,
+								product_id,
+								variation_id,
+								qty,
+								price,
+								purchase_price
+							FROM {$table}
+							WHERE product_id = %d
+								AND variation_id = %d
+							ORDER BY qty ASC
+							LIMIT 1",
+							$product_id,
+							$target_variation_id
+						)
+					);
+			}
+
+
+			if ( $row ) {
+				return $row;
+			}
+		}
+
+		return null;
+	}
+
+
+	/**
 	 * Resolve a price against one exact target.
 	 *
 	 * First:
