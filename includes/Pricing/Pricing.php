@@ -30,6 +30,12 @@ final class Pricing {
 
 	private PriceRepository $repository;
 
+	private MarkupRepository $markup_repository;
+
+	private MarkupRules $markup_rules;
+
+	private CostCalculator $costs;
+
 	private TieredPricing $tiers;
 
 	private CartPricing $cart;
@@ -55,34 +61,12 @@ final class Pricing {
 
 		/*
 		|--------------------------------------------------------------------------
-		| Storage
-		|--------------------------------------------------------------------------
-		*/
-
-		$this->repository =
-			new PriceRepository();
-
-
-		/*
-		|--------------------------------------------------------------------------
 		| Calculation Engine
 		|--------------------------------------------------------------------------
 		*/
 
 		$this->engine =
 			new Engine();
-
-
-		/*
-		|--------------------------------------------------------------------------
-		| Tier Pricing
-		|--------------------------------------------------------------------------
-		*/
-
-		$this->tiers =
-			new TieredPricing(
-				$this->repository
-			);
 
 
 		/*
@@ -96,6 +80,74 @@ final class Pricing {
 				$this->engine,
 				$this->tiers
 			);
+
+		/*
+		|--------------------------------------------------------------------------
+		| Storage
+		|--------------------------------------------------------------------------
+		*/
+
+		$this->repository =
+			new PriceRepository();
+
+		/*
+		|--------------------------------------------------------------------------
+		| Pricing Engine
+		|--------------------------------------------------------------------------
+		*/
+
+		$this->engine =
+			new Engine();
+
+		/*
+		|--------------------------------------------------------------------------
+		| Markup Repository and Rules
+		|--------------------------------------------------------------------------
+		*/
+
+		$this->markup_repository =
+			new MarkupRepository();
+
+		$this->markup_rules =
+			new MarkupRules(
+				$this->markup_repository
+			);
+
+		/*
+		|--------------------------------------------------------------------------
+		| Cost Calculator
+		|--------------------------------------------------------------------------
+		*/
+
+		$this->costs =
+			new CostCalculator(
+				$this->repository,
+				$this->markup_rules
+			);
+		
+		/*
+		|--------------------------------------------------------------------------
+		| Tier Pricing
+		|--------------------------------------------------------------------------
+		*/
+
+		$this->tiers =
+			new TieredPricing(
+				$this->repository,
+				$this->costs
+			);
+
+		/*
+		|--------------------------------------------------------------------------
+		| Cart Pricing
+		|--------------------------------------------------------------------------
+		*/
+		$this->cart =
+			new CartPricing(
+				$this->engine,
+				$this->tiers
+			);
+
 	}
 
 
@@ -402,6 +454,21 @@ final class Pricing {
 
 	public function repository(): PriceRepository {
 		return $this->repository;
+	}
+
+
+	public function markup_rules(): MarkupRules {
+		return $this->markup_rules;
+	}
+
+
+	public function markup_repository(): MarkupRepository {
+		return $this->markup_repository;
+	}
+
+
+	public function costs(): CostCalculator {
+		return $this->costs;
 	}
 
 

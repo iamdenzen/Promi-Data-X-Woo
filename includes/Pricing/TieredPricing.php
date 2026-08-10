@@ -22,12 +22,15 @@ defined( 'ABSPATH' ) || exit;
 final class TieredPricing {
 
 	private PriceRepository $repository;
+	private CostCalculator $costs;
 
 
 	public function __construct(
-		PriceRepository $repository
+		PriceRepository $repository,
+		CostCalculator $costs
 	) {
 		$this->repository = $repository;
+		$this->costs = $costs;
 	}
 
 
@@ -58,38 +61,81 @@ final class TieredPricing {
 		array $context
 	): float {
 
-		$product_id = absint(
-			$context['product_id']
-				?? 0
-		);
-
-		$variation_id = absint(
-			$context['variation_id']
-				?? 0
-		);
-
-		$quantity = max(
-			1,
+		$product_id =
 			absint(
-				$context['quantity']
-					?? $context['qty']
-					?? 1
-			)
-		);
+				$context['product_id']
+					?? 0
+			);
+
+		$variation_id =
+			absint(
+				$context['variation_id']
+					?? 0
+			);
+
+		$quantity =
+			max(
+				1,
+				absint(
+					$context['quantity']
+						?? $context['qty']
+						?? 1
+				)
+			);
 
 		if ( ! $product_id ) {
-			return $price;
+			return 0.0;
 		}
 
-		$tier = $this->selling_price(
-			$product_id,
-			$variation_id,
-			$quantity
-		);
 
-		return null !== $tier
-			? $tier
-			: $price;
+		$result =
+			$this->costs
+				->calculate(
+					$product_id,
+					$variation_id,
+					$quantity
+				);
+
+
+		/*
+		|--------------------------------------------------------------------------
+		| Case 3
+		|--------------------------------------------------------------------------
+		|
+		| A zero price here is intentional.
+		|
+		| CartPricing separately sees the price_on_request status and prevents
+		| printing from creating a fake priced cart item.
+		*/
+
+		if (
+			CostCalculator::STATUS_PRICE_ON_REQUEST
+			=== $result['status']
+		) {
+			return 0.0;
+		}
+
+
+		return max(
+			0.0,
+			(float)
+				$result['article_price']
+		);
+	}
+
+
+	public function article_price(
+		int $product_id,
+		int $variation_id,
+		int $quantity
+	): array {
+
+		return $this->costs
+			->calculate(
+				$product_id,
+				$variation_id,
+				$quantity
+			);
 	}
 
 
@@ -108,12 +154,26 @@ final class TieredPricing {
 		int $quantity = 1
 	): ?float {
 
-		return $this->repository
-			->get_applicable_selling_price(
-				$product_id,
-				$variation_id,
-				$quantity
-			);
+		$result =
+			$this->costs
+				->calculate(
+					$product_id,
+					$variation_id,
+					max(
+						1,
+						$quantity
+					)
+				);
+
+		if (
+			CostCalculator::STATUS_PRICE_ON_REQUEST
+			=== $result['status']
+		) {
+			return null;
+		}
+
+		return (float)
+			$result['article_price'];
 	}
 
 
