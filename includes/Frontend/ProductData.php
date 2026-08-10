@@ -340,7 +340,7 @@ final class ProductData {
 		) {
 
 			$key =
-				sanitize_title(
+				wc_variation_attribute_name(
 					(string) $key
 				);
 
