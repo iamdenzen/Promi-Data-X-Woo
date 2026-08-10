@@ -300,6 +300,9 @@ final class CartPricing {
 		$product->set_price(
 			$final_unit
 		);
+		$cart_item['data']->set_price(
+			$final_unit
+		);
 
 
 		/*
