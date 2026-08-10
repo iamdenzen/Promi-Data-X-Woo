@@ -317,8 +317,11 @@ final class ProductData {
 		);
 
 		if (
-			method_exists(
+			/*method_exists(
 				$data_store,
+				'find_matching_product_variation'
+			)*/
+			$data_store->has_callable(
 				'find_matching_product_variation'
 			)
 		) {
