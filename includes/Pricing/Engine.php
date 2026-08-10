@@ -180,6 +180,8 @@ final class Engine {
 		array $context = []
 	): float {
 
+		error_log( json_encode( $this->callbacks ) );
+
 		if ( empty( $this->callbacks ) ) {
 			return max(
 				0.0,

@@ -278,7 +278,7 @@ final class CartPricing {
 					$context
 				);
 
-
+		error_log( "Base price: $base_price, Final price: $final_price" );
 		/*
 		|--------------------------------------------------------------------------
 		| WooCommerce

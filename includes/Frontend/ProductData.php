@@ -294,27 +294,8 @@ final class ProductData {
 			return 0;
 		}
 
-		error_log(
-			'BEFORE DATA STORE, product: ' . $product->get_id()
-		);
-
 		$data_store =
 			$product->get_data_store();
-
-		error_log(
-			'DATA STORE CLASS: ' . get_class( $data_store )
-		);
-
-		error_log(
-			'HAS MATCH METHOD: ' . (
-				method_exists(
-					$data_store,
-					'find_matching_product_variation'
-				)
-					? 'YES'
-					: 'NO'
-			)
-		);
 
 		if (
 			$data_store->has_callable(
