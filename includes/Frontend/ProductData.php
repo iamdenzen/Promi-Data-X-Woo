@@ -335,51 +335,24 @@ final class ProductData {
 
 		$normalized = [];
 
-		foreach (
-			$attributes as $key => $value
-		) {
+		foreach ( $attributes as $key => $value ) {
 
-			$key =
-				wc_variation_attribute_name(
-					(string) $key
-				);
+			$key = (string) $key;
 
-			$value =
-				sanitize_title(
-					(string) $value
-				);
+			if ( str_starts_with( $key, 'attribute_' ) ) {
+				$key = substr( $key, 10 );
+			}
 
-			if (
-				'' === $key
-				|| '' === $value
-			) {
+			$key = wc_variation_attribute_name( $key );
+			$value = sanitize_title( (string) $value );
+
+			if ( '' === $value ) {
 				continue;
 			}
 
-			if (
-				! str_starts_with(
-					$key,
-					'attribute_'
-				)
-			) {
-				$key =
-					'attribute_'
-					. $key;
-			}
-
-			$normalized[
-				$key
-			] = $value;
+			$normalized[ $key ] = $value;
 		}
 
-		error_log(
-			'normalize_matching_attributes: '
-			. print_r(
-				$normalized,
-				true
-			)
-		);
-		
 		return $normalized;
 	}
 
