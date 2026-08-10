@@ -372,6 +372,14 @@ final class ProductData {
 			] = $value;
 		}
 
+		error_log(
+			'normalize_matching_attributes: '
+			. print_r(
+				$normalized,
+				true
+			)
+		);
+		
 		return $normalized;
 	}
 
