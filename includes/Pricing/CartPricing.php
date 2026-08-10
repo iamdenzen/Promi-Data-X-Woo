@@ -100,6 +100,30 @@ final class CartPricing {
 			},
 			999
 		);
+
+		add_action(
+	'woocommerce_after_calculate_totals',
+	function ( \WC_Cart $cart ) {
+
+		foreach ( $cart->get_cart() as $key => $item ) {
+
+			$product = $item['data'];
+
+			error_log(
+				'PXD FINAL CART STATE: ' . wp_json_encode(
+					[
+						'key'           => $key,
+						'product_price' => $product->get_price(),
+						'quantity'      => $item['quantity'] ?? null,
+						'line_subtotal' => $item['line_subtotal'] ?? null,
+						'line_total'    => $item['line_total'] ?? null,
+					]
+				)
+			);
+		}
+	},
+	999
+);
 	}
 
 
