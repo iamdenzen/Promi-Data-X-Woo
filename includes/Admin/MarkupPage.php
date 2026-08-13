@@ -2,6 +2,7 @@
 
 namespace PromiDataXWoo\Admin;
 
+use PromiDataXWoo\Core\Database;
 use PromiDataXWoo\Pricing\MarkupRepository;
 use PromiDataXWoo\Pricing\Pricing;
 
@@ -9,17 +10,6 @@ defined( 'ABSPATH' ) || exit;
 
 /**
  * Pricing markups administration page.
- *
- * Renders a React-driven admin UI backed by the REST endpoints registered
- * in Pricing\RestController:
- *
- *     GET/PUT  pdxw/v1/pricing/defaults
- *     GET      pdxw/v1/pricing/categories
- *     PUT      pdxw/v1/pricing/categories/{id}
- *     GET      pdxw/v1/pricing/print-options
- *     PUT      pdxw/v1/pricing/print-options/{id}
- *
- * Business logic stays in Pricing\MarkupRules and Pricing\MarkupRepository.
  */
 final class MarkupPage {
 
@@ -31,7 +21,8 @@ final class MarkupPage {
 	public function __construct(
 		Pricing $pricing
 	) {
-		$this->pricing = $pricing;
+		$this->pricing =
+			$pricing;
 	}
 
 
@@ -53,9 +44,6 @@ final class MarkupPage {
 	}
 
 
-	/**
-	 * Enqueue page-specific assets when viewing the Markups page.
-	 */
 	public function enqueue_assets(
 		string $hook
 	): void {
@@ -72,6 +60,56 @@ final class MarkupPage {
 		wp_enqueue_script(
 			'wp-api-fetch'
 		);
+	}
+
+
+	/**
+	 * Return all WooCommerce product categories.
+	 */
+	private function categories(): array {
+
+		$categories =
+			get_terms(
+				[
+					'taxonomy'   => 'product_cat',
+					'hide_empty' => false,
+				]
+			);
+
+		return is_wp_error( $categories )
+			? []
+			: $categories;
+	}
+
+
+	/**
+	 * Return all global print options.
+	 *
+	 * We read directly from the existing plugin table here because this admin
+	 * page only needs a lightweight list of IDs and names.
+	 */
+	private function print_options(): array {
+
+		global $wpdb;
+
+		$table =
+			Database::table(
+				'print_options'
+			);
+
+		$results =
+			$wpdb->get_results(
+				"SELECT
+					id,
+					name,
+					sku
+				FROM {$table}
+				ORDER BY name ASC"
+			);
+
+		return is_array( $results )
+			? $results
+			: [];
 	}
 
 
@@ -93,29 +131,78 @@ final class MarkupPage {
 			);
 		}
 
-		$article_markup = $this->pricing
-			->markup_rules()
-			->article_default();
 
-		$finishing_markup = $this->pricing
-			->markup_rules()
-			->finishing_default();
+		$article_markup =
+			$this->pricing
+				->markup_rules()
+				->article_default();
 
-		$category_rules = $this->pricing
-			->markup_repository()
-			->all( MarkupRepository::TYPE_CATEGORY );
+		$finishing_markup =
+			$this->pricing
+				->markup_rules()
+				->finishing_default();
 
-		$print_option_rules = $this->pricing
-			->markup_repository()
-			->all( MarkupRepository::TYPE_PRINT_OPTION );
 
-		$api_root = esc_url_raw( rest_url( 'pdxw/v1' ) );
-		$nonce    = wp_create_nonce( 'wp_rest' );
+		$category_rules =
+			$this->pricing
+				->markup_repository()
+				->all(
+					MarkupRepository::TYPE_CATEGORY
+				);
+
+
+		$print_option_rules =
+			$this->pricing
+				->markup_repository()
+				->all(
+					MarkupRepository::TYPE_PRINT_OPTION
+				);
+
+
+		$categories =
+			$this->categories();
+
+		$print_options =
+			$this->print_options();
+
+
+		$category_rule_ids =
+			array_map(
+				'absint',
+				wp_list_pluck(
+					$category_rules,
+					'target_id'
+				)
+			);
+
+		$print_option_rule_ids =
+			array_map(
+				'absint',
+				wp_list_pluck(
+					$print_option_rules,
+					'target_id'
+				)
+			);
+
+
+		$api_root =
+			esc_url_raw(
+				rest_url(
+					'pdxw/v1'
+				)
+			);
+
+		$nonce =
+			wp_create_nonce(
+				'wp_rest'
+			);
 
 		?>
 		<div class="wrap">
 
-			<h1><?php echo esc_html__( 'Pricing Markups', 'promi-data-x-woo' ); ?></h1>
+			<h1>
+				<?php echo esc_html__( 'Pricing Markups', 'promi-data-x-woo' ); ?>
+			</h1>
 
 			<p class="description">
 				<?php echo esc_html__( 'Configure markup percentages applied to Promi purchase prices when calculating selling prices.', 'promi-data-x-woo' ); ?>
@@ -126,15 +213,11 @@ final class MarkupPage {
 			<div id="pdxw-markup-notices"></div>
 
 
-			<?php
-			/*
-			|--------------------------------------------------------------------------
-			| Default Markups
-			|--------------------------------------------------------------------------
-			*/
-			?>
+			<!-- Default Markups -->
 
-			<h2><?php echo esc_html__( 'Default Markups', 'promi-data-x-woo' ); ?></h2>
+			<h2>
+				<?php echo esc_html__( 'Default Markups', 'promi-data-x-woo' ); ?>
+			</h2>
 
 			<p class="description">
 				<?php echo esc_html__( 'Applied when no category or print-option specific rule matches.', 'promi-data-x-woo' ); ?>
@@ -149,6 +232,7 @@ final class MarkupPage {
 								<?php echo esc_html__( 'Article Markup (%)', 'promi-data-x-woo' ); ?>
 							</label>
 						</th>
+
 						<td>
 							<input
 								type="number"
@@ -158,11 +242,13 @@ final class MarkupPage {
 								min="0"
 								step="0.01"
 							>
+
 							<p class="description">
 								<?php echo esc_html__( 'Default markup applied to article purchase prices.', 'promi-data-x-woo' ); ?>
 							</p>
 						</td>
 					</tr>
+
 
 					<tr>
 						<th scope="row">
@@ -170,6 +256,7 @@ final class MarkupPage {
 								<?php echo esc_html__( 'Finishing Markup (%)', 'promi-data-x-woo' ); ?>
 							</label>
 						</th>
+
 						<td>
 							<input
 								type="number"
@@ -179,8 +266,9 @@ final class MarkupPage {
 								min="0"
 								step="0.01"
 							>
+
 							<p class="description">
-								<?php echo esc_html__( 'Default markup applied to print/finishing option purchase prices.', 'promi-data-x-woo' ); ?>
+								<?php echo esc_html__( 'Default markup applied to print and finishing purchase prices.', 'promi-data-x-woo' ); ?>
 							</p>
 						</td>
 					</tr>
@@ -199,44 +287,148 @@ final class MarkupPage {
 			</p>
 
 
-			<?php
-			/*
-			|--------------------------------------------------------------------------
-			| Category Markup Overrides
-			|--------------------------------------------------------------------------
-			*/
-			?>
-
 			<hr>
 
-			<h2><?php echo esc_html__( 'Category Markup Overrides', 'promi-data-x-woo' ); ?></h2>
+
+			<!-- Category Overrides -->
+
+			<h2>
+				<?php echo esc_html__( 'Category Markup Overrides', 'promi-data-x-woo' ); ?>
+			</h2>
 
 			<p class="description">
-				<?php echo esc_html__( 'Set a specific markup for a product category. Overrides the default article markup for products in that category.', 'promi-data-x-woo' ); ?>
+				<?php echo esc_html__( 'A category-specific markup overrides the default article markup.', 'promi-data-x-woo' ); ?>
 			</p>
 
-			<?php if ( ! empty( $category_rules ) ) : ?>
 
-				<table class="wp-list-table widefat fixed striped" id="pdxw-category-rules">
+			<div class="pdxw-add-rule">
 
-					<thead>
-						<tr>
-							<th><?php echo esc_html__( 'Category', 'promi-data-x-woo' ); ?></th>
-							<th><?php echo esc_html__( 'Markup (%)', 'promi-data-x-woo' ); ?></th>
-							<th><?php echo esc_html__( 'Actions', 'promi-data-x-woo' ); ?></th>
+				<select id="pdxw-new-category">
+
+					<option value="">
+						<?php echo esc_html__( 'Select a category…', 'promi-data-x-woo' ); ?>
+					</option>
+
+					<?php foreach ( $categories as $category ) : ?>
+
+						<?php
+						$category_id =
+							absint(
+								$category->term_id
+							);
+						?>
+
+						<option
+							value="<?php echo esc_attr( $category_id ); ?>"
+							<?php disabled( in_array( $category_id, $category_rule_ids, true ) ); ?>
+						>
+							<?php
+							echo esc_html(
+								$category->name
+								. (
+									in_array(
+										$category_id,
+										$category_rule_ids,
+										true
+									)
+									? ' — ' . __( 'Already configured', 'promi-data-x-woo' )
+									: ''
+								)
+							);
+							?>
+						</option>
+
+					<?php endforeach; ?>
+
+				</select>
+
+				<input
+					type="number"
+					id="pdxw-new-category-markup"
+					class="small-text"
+					value=""
+					min="0"
+					step="0.01"
+					placeholder="25"
+				>
+
+				<button
+					type="button"
+					id="pdxw-add-category-rule"
+					class="button"
+				>
+					<?php echo esc_html__( 'Add Category Override', 'promi-data-x-woo' ); ?>
+				</button>
+
+			</div>
+
+
+			<table
+				class="wp-list-table widefat fixed striped"
+				id="pdxw-category-rules"
+				style="margin-top: 16px;"
+			>
+
+				<thead>
+					<tr>
+						<th>
+							<?php echo esc_html__( 'Category', 'promi-data-x-woo' ); ?>
+						</th>
+
+						<th>
+							<?php echo esc_html__( 'Markup (%)', 'promi-data-x-woo' ); ?>
+						</th>
+
+						<th>
+							<?php echo esc_html__( 'Actions', 'promi-data-x-woo' ); ?>
+						</th>
+					</tr>
+				</thead>
+
+				<tbody>
+
+					<?php if ( empty( $category_rules ) ) : ?>
+
+						<tr class="pdxw-empty-row">
+							<td colspan="3">
+								<?php echo esc_html__( 'No category markup overrides configured.', 'promi-data-x-woo' ); ?>
+							</td>
 						</tr>
-					</thead>
 
-					<tbody>
-						<?php foreach ( $category_rules as $rule ) :
-							$term = get_term( absint( $rule['target_id'] ?? 0 ), 'product_cat' );
-							$term_name = $term instanceof \WP_Term
-								? $term->name
-								: sprintf( __( 'Category #%d', 'promi-data-x-woo' ), $rule['target_id'] );
+					<?php else : ?>
+
+						<?php foreach ( $category_rules as $rule ) : ?>
+
+							<?php
+							$category_id =
+								absint(
+									$rule['target_id'] ?? 0
+								);
+
+							$term =
+								get_term(
+									$category_id,
+									'product_cat'
+								);
+
+							$term_name =
+								$term instanceof \WP_Term
+									? $term->name
+									: sprintf(
+										__( 'Category #%d', 'promi-data-x-woo' ),
+										$category_id
+									);
 							?>
 
-							<tr data-rule-type="category" data-rule-id="<?php echo esc_attr( $rule['target_id'] ?? 0 ); ?>">
-								<td><?php echo esc_html( $term_name ); ?></td>
+							<tr
+								data-rule-type="<?php echo esc_attr( MarkupRepository::TYPE_CATEGORY ); ?>"
+								data-rule-id="<?php echo esc_attr( $category_id ); ?>"
+							>
+
+								<td class="pdxw-rule-name">
+									<?php echo esc_html( $term_name ); ?>
+								</td>
+
 								<td>
 									<input
 										type="number"
@@ -246,61 +438,196 @@ final class MarkupPage {
 										step="0.01"
 									>
 								</td>
+
 								<td>
+
 									<button
 										type="button"
 										class="button button-small pdxw-save-rule"
 									>
 										<?php echo esc_html__( 'Save', 'promi-data-x-woo' ); ?>
 									</button>
+
+									<button
+										type="button"
+										class="button button-small pdxw-delete-rule"
+									>
+										<?php echo esc_html__( 'Remove', 'promi-data-x-woo' ); ?>
+									</button>
+
 								</td>
+
 							</tr>
 
 						<?php endforeach; ?>
-					</tbody>
 
-				</table>
+					<?php endif; ?>
 
-			<?php else : ?>
+				</tbody>
 
-				<p><?php echo esc_html__( 'No category markup rules configured.', 'promi-data-x-woo' ); ?></p>
+			</table>
 
-			<?php endif; ?>
-
-
-			<?php
-			/*
-			|--------------------------------------------------------------------------
-			| Print Option Markup Overrides
-			|--------------------------------------------------------------------------
-			*/
-			?>
 
 			<hr>
 
-			<h2><?php echo esc_html__( 'Print Option Markup Overrides', 'promi-data-x-woo' ); ?></h2>
+
+			<!-- Print Option Overrides -->
+
+			<h2>
+				<?php echo esc_html__( 'Print Option Markup Overrides', 'promi-data-x-woo' ); ?>
+			</h2>
 
 			<p class="description">
-				<?php echo esc_html__( 'Set a specific markup for a print option. Overrides the default finishing markup for that option.', 'promi-data-x-woo' ); ?>
+				<?php echo esc_html__( 'A print-option-specific markup overrides the default finishing markup.', 'promi-data-x-woo' ); ?>
 			</p>
 
-			<?php if ( ! empty( $print_option_rules ) ) : ?>
 
-				<table class="wp-list-table widefat fixed striped" id="pdxw-print-option-rules">
+			<div class="pdxw-add-rule">
 
-					<thead>
-						<tr>
-							<th><?php echo esc_html__( 'Print Option', 'promi-data-x-woo' ); ?></th>
-							<th><?php echo esc_html__( 'Markup (%)', 'promi-data-x-woo' ); ?></th>
-							<th><?php echo esc_html__( 'Actions', 'promi-data-x-woo' ); ?></th>
+				<select id="pdxw-new-print-option">
+
+					<option value="">
+						<?php echo esc_html__( 'Select a print option…', 'promi-data-x-woo' ); ?>
+					</option>
+
+					<?php foreach ( $print_options as $option ) : ?>
+
+						<?php
+						$option_id =
+							absint(
+								$option->id
+							);
+
+						$option_name =
+							trim(
+								(string) (
+									$option->name
+									?: $option->sku
+								)
+							);
+						?>
+
+						<option
+							value="<?php echo esc_attr( $option_id ); ?>"
+							<?php disabled( in_array( $option_id, $print_option_rule_ids, true ) ); ?>
+						>
+							<?php
+							echo esc_html(
+								$option_name
+								. (
+									in_array(
+										$option_id,
+										$print_option_rule_ids,
+										true
+									)
+									? ' — ' . __( 'Already configured', 'promi-data-x-woo' )
+									: ''
+								)
+							);
+							?>
+						</option>
+
+					<?php endforeach; ?>
+
+				</select>
+
+				<input
+					type="number"
+					id="pdxw-new-print-option-markup"
+					class="small-text"
+					value=""
+					min="0"
+					step="0.01"
+					placeholder="25"
+				>
+
+				<button
+					type="button"
+					id="pdxw-add-print-option-rule"
+					class="button"
+				>
+					<?php echo esc_html__( 'Add Print Option Override', 'promi-data-x-woo' ); ?>
+				</button>
+
+			</div>
+
+
+			<table
+				class="wp-list-table widefat fixed striped"
+				id="pdxw-print-option-rules"
+				style="margin-top: 16px;"
+			>
+
+				<thead>
+					<tr>
+						<th>
+							<?php echo esc_html__( 'Print Option', 'promi-data-x-woo' ); ?>
+						</th>
+
+						<th>
+							<?php echo esc_html__( 'Markup (%)', 'promi-data-x-woo' ); ?>
+						</th>
+
+						<th>
+							<?php echo esc_html__( 'Actions', 'promi-data-x-woo' ); ?>
+						</th>
+					</tr>
+				</thead>
+
+				<tbody>
+
+					<?php if ( empty( $print_option_rules ) ) : ?>
+
+						<tr class="pdxw-empty-row">
+							<td colspan="3">
+								<?php echo esc_html__( 'No print option markup overrides configured.', 'promi-data-x-woo' ); ?>
+							</td>
 						</tr>
-					</thead>
 
-					<tbody>
+					<?php else : ?>
+
 						<?php foreach ( $print_option_rules as $rule ) : ?>
 
-							<tr data-rule-type="<?php echo esc_attr( MarkupRepository::TYPE_PRINT_OPTION ); ?>" data-rule-id="<?php echo esc_attr( $rule['target_id'] ?? 0 ); ?>">
-								<td><?php echo esc_html( sprintf( __( 'Print Option #%d', 'promi-data-x-woo' ), $rule['target_id'] ) ); ?></td>
+							<?php
+							$option_id =
+								absint(
+									$rule['target_id'] ?? 0
+								);
+
+							$option_name =
+								sprintf(
+									__( 'Print Option #%d', 'promi-data-x-woo' ),
+									$option_id
+								);
+
+							foreach ( $print_options as $option ) {
+
+								if (
+									absint( $option->id )
+									=== $option_id
+								) {
+									$option_name =
+										trim(
+											(string) (
+												$option->name
+												?: $option->sku
+											)
+										);
+
+									break;
+								}
+							}
+							?>
+
+							<tr
+								data-rule-type="<?php echo esc_attr( MarkupRepository::TYPE_PRINT_OPTION ); ?>"
+								data-rule-id="<?php echo esc_attr( $option_id ); ?>"
+							>
+
+								<td class="pdxw-rule-name">
+									<?php echo esc_html( $option_name ); ?>
+								</td>
+
 								<td>
 									<input
 										type="number"
@@ -310,26 +637,34 @@ final class MarkupPage {
 										step="0.01"
 									>
 								</td>
+
 								<td>
+
 									<button
 										type="button"
 										class="button button-small pdxw-save-rule"
 									>
 										<?php echo esc_html__( 'Save', 'promi-data-x-woo' ); ?>
 									</button>
+
+									<button
+										type="button"
+										class="button button-small pdxw-delete-rule"
+									>
+										<?php echo esc_html__( 'Remove', 'promi-data-x-woo' ); ?>
+									</button>
+
 								</td>
+
 							</tr>
 
 						<?php endforeach; ?>
-					</tbody>
 
-				</table>
+					<?php endif; ?>
 
-			<?php else : ?>
+				</tbody>
 
-				<p><?php echo esc_html__( 'No print option markup rules configured.', 'promi-data-x-woo' ); ?></p>
-
-			<?php endif; ?>
+			</table>
 
 		</div>
 
@@ -337,89 +672,615 @@ final class MarkupPage {
 		<script>
 		(function () {
 
-			const apiRoot  = <?php echo wp_json_encode( $api_root ); ?>;
-			const nonce    = <?php echo wp_json_encode( $nonce ); ?>;
-			const notices  = document.getElementById( 'pdxw-markup-notices' );
+			const apiRoot =
+				<?php echo wp_json_encode( $api_root ); ?>;
+
+			const nonce =
+				<?php echo wp_json_encode( $nonce ); ?>;
+
+			const notices =
+				document.getElementById(
+					'pdxw-markup-notices'
+				);
+
+			const categoryType =
+				<?php echo wp_json_encode( MarkupRepository::TYPE_CATEGORY ); ?>;
+
+
+			function escapeHtml( value ) {
+
+				const div =
+					document.createElement( 'div' );
+
+				div.textContent =
+					String( value );
+
+				return div.innerHTML;
+			}
 
 
 			function showNotice( message, type ) {
-				notices.innerHTML = '<div class="notice notice-' + type + ' is-dismissible"><p>' + message + '</p></div>';
-				setTimeout( function () { notices.innerHTML = ''; }, 4000 );
+
+				notices.innerHTML =
+					'<div class="notice notice-'
+					+ type
+					+ ' is-dismissible"><p>'
+					+ escapeHtml( message )
+					+ '</p></div>';
+
+				setTimeout(
+					function () {
+						notices.innerHTML = '';
+					},
+					4000
+				);
 			}
 
 
 			function apiFetch( path, method, body ) {
-				return fetch( apiRoot + path, {
-					method:  method || 'GET',
-					headers: {
-						'Content-Type': 'application/json',
-						'X-WP-Nonce':   nonce,
-					},
-					body: body ? JSON.stringify( body ) : undefined,
-				} ).then( function ( res ) {
-					return res.json();
-				} );
+
+				return fetch(
+					apiRoot + path,
+					{
+						method:
+							method || 'GET',
+
+						headers:
+							{
+								'Content-Type':
+									'application/json',
+
+								'X-WP-Nonce':
+									nonce,
+							},
+
+						body:
+							body
+								? JSON.stringify( body )
+								: undefined,
+					}
+				)
+				.then(
+					function ( response ) {
+
+						return response
+							.json()
+							.catch(
+								function () {
+									return {};
+								}
+							)
+							.then(
+								function ( data ) {
+
+									if ( ! response.ok ) {
+										throw new Error(
+											data.message
+											|| 'Request failed.'
+										);
+									}
+
+									return data;
+								}
+							);
+					}
+				);
 			}
 
 
-			document.getElementById( 'pdxw-save-defaults' ).addEventListener( 'click', function () {
-				const article  = parseFloat( document.getElementById( 'pdxw-article-markup' ).value );
-				const finishing = parseFloat( document.getElementById( 'pdxw-finishing-markup' ).value );
+			function getRulePath(
+				type,
+				id
+			) {
 
-				if ( isNaN( article ) || isNaN( finishing ) ) {
-					showNotice( <?php echo wp_json_encode( __( 'Please enter valid numbers.', 'promi-data-x-woo' ) ); ?>, 'error' );
+				return type === categoryType
+					? '/pricing/categories/' + id
+					: '/pricing/print-options/' + id;
+			}
+
+
+			function validateMarkup(
+				value
+			) {
+
+				const markup =
+					parseFloat( value );
+
+				return (
+					! isNaN( markup )
+					&& markup >= 0
+				)
+					? markup
+					: null;
+			}
+
+
+			/*
+			|--------------------------------------------------------------------------
+			| Default Markups
+			|--------------------------------------------------------------------------
+			*/
+
+			document
+				.getElementById(
+					'pdxw-save-defaults'
+				)
+				.addEventListener(
+					'click',
+					function () {
+
+						const article =
+							validateMarkup(
+								document
+									.getElementById(
+										'pdxw-article-markup'
+									)
+									.value
+							);
+
+						const finishing =
+							validateMarkup(
+								document
+									.getElementById(
+										'pdxw-finishing-markup'
+									)
+									.value
+							);
+
+						if (
+							null === article
+							|| null === finishing
+						) {
+							showNotice(
+								<?php echo wp_json_encode( __( 'Please enter valid non-negative markup values.', 'promi-data-x-woo' ) ); ?>,
+								'error'
+							);
+
+							return;
+						}
+
+						apiFetch(
+							'/pricing/defaults',
+							'POST',
+							{
+								article_markup:
+									article,
+
+								finishing_markup:
+									finishing,
+							}
+						)
+						.then(
+							function () {
+
+								showNotice(
+									<?php echo wp_json_encode( __( 'Default markups saved.', 'promi-data-x-woo' ) ); ?>,
+									'success'
+								);
+							}
+						)
+						.catch(
+							function ( error ) {
+
+								showNotice(
+									error.message
+									|| <?php echo wp_json_encode( __( 'Error saving defaults.', 'promi-data-x-woo' ) ); ?>,
+									'error'
+								);
+							}
+						);
+					}
+				);
+
+
+			/*
+			|--------------------------------------------------------------------------
+			| Add Rules
+			|--------------------------------------------------------------------------
+			*/
+
+			function addRule(
+				type,
+				selectId,
+				markupId,
+				tableId
+			) {
+
+				const select =
+					document.getElementById(
+						selectId
+					);
+
+				const markupInput =
+					document.getElementById(
+						markupId
+					);
+
+				const id =
+					parseInt(
+						select.value,
+						10
+					);
+
+				const markup =
+					validateMarkup(
+						markupInput.value
+					);
+
+				if ( ! id ) {
+
+					showNotice(
+						<?php echo wp_json_encode( __( 'Please select an item.', 'promi-data-x-woo' ) ); ?>,
+						'error'
+					);
+
 					return;
 				}
 
-				apiFetch( '/pricing/defaults', 'POST', {
-					article_markup:   article,
-					finishing_markup: finishing,
-				} ).then( function () {
-					showNotice( <?php echo wp_json_encode( __( 'Default markups saved.', 'promi-data-x-woo' ) ); ?>, 'success' );
-				} ).catch( function () {
-					showNotice( <?php echo wp_json_encode( __( 'Error saving defaults.', 'promi-data-x-woo' ) ); ?>, 'error' );
-				} );
-			} );
+				if ( null === markup ) {
+
+					showNotice(
+						<?php echo wp_json_encode( __( 'Please enter a valid non-negative markup.', 'promi-data-x-woo' ) ); ?>,
+						'error'
+					);
+
+					return;
+				}
+
+				apiFetch(
+					getRulePath(
+						type,
+						id
+					),
+					'POST',
+					{
+						markup_percent:
+							markup,
+					}
+				)
+				.then(
+					function () {
+
+						const option =
+							select.options[
+								select.selectedIndex
+							];
+
+						const name =
+							option.text
+								.replace(
+									' — <?php echo esc_js( __( 'Already configured', 'promi-data-x-woo' ) ); ?>',
+									''
+								);
+
+						const tbody =
+							document
+								.querySelector(
+									'#'
+									+ tableId
+									+ ' tbody'
+								);
+
+						const emptyRow =
+							tbody.querySelector(
+								'.pdxw-empty-row'
+							);
+
+						if ( emptyRow ) {
+							emptyRow.remove();
+						}
+
+						const row =
+							document.createElement(
+								'tr'
+							);
+
+						row.dataset.ruleType =
+							type;
+
+						row.dataset.ruleId =
+							id;
+
+						row.innerHTML =
+							'<td class="pdxw-rule-name">'
+							+ escapeHtml( name )
+							+ '</td>'
+							+ '<td>'
+							+ '<input type="number" class="small-text pdxw-rule-markup" '
+							+ 'value="' + markup + '" min="0" step="0.01">'
+							+ '</td>'
+							+ '<td>'
+							+ '<button type="button" class="button button-small pdxw-save-rule">'
+							+ <?php echo wp_json_encode( __( 'Save', 'promi-data-x-woo' ) ); ?>
+							+ '</button> '
+							+ '<button type="button" class="button button-small pdxw-delete-rule">'
+							+ <?php echo wp_json_encode( __( 'Remove', 'promi-data-x-woo' ) ); ?>
+							+ '</button>'
+							+ '</td>';
+
+						tbody.appendChild(
+							row
+						);
+
+						select
+							.querySelector(
+								'option[value="'
+								+ id
+								+ '"]'
+							)
+							.disabled =
+								true;
+
+						select.value = '';
+
+						markupInput.value = '';
+
+						showNotice(
+							<?php echo wp_json_encode( __( 'Markup override added.', 'promi-data-x-woo' ) ); ?>,
+							'success'
+						);
+					}
+				)
+				.catch(
+					function ( error ) {
+
+						showNotice(
+							error.message
+							|| <?php echo wp_json_encode( __( 'Error adding markup override.', 'promi-data-x-woo' ) ); ?>,
+							'error'
+						);
+					}
+				);
+			}
 
 
-			document.querySelectorAll( '.pdxw-save-rule' ).forEach( function ( btn ) {
-				btn.addEventListener( 'click', function () {
-					const row    = btn.closest( 'tr' );
-					const type   = row.dataset.ruleType;
-					const id     = row.dataset.ruleId;
-					const markup = parseFloat( row.querySelector( '.pdxw-rule-markup' ).value );
+			document
+				.getElementById(
+					'pdxw-add-category-rule'
+				)
+				.addEventListener(
+					'click',
+					function () {
 
-					if ( isNaN( markup ) ) {
-						showNotice( <?php echo wp_json_encode( __( 'Please enter a valid markup.', 'promi-data-x-woo' ) ); ?>, 'error' );
+						addRule(
+							categoryType,
+							'pdxw-new-category',
+							'pdxw-new-category-markup',
+							'pdxw-category-rules'
+						);
+					}
+				);
+
+
+			document
+				.getElementById(
+					'pdxw-add-print-option-rule'
+				)
+				.addEventListener(
+					'click',
+					function () {
+
+						addRule(
+							<?php echo wp_json_encode( MarkupRepository::TYPE_PRINT_OPTION ); ?>,
+							'pdxw-new-print-option',
+							'pdxw-new-print-option-markup',
+							'pdxw-print-option-rules'
+						);
+					}
+				);
+
+
+			/*
+			|--------------------------------------------------------------------------
+			| Save And Delete Existing Rules
+			|--------------------------------------------------------------------------
+			*/
+
+			document.addEventListener(
+				'click',
+				function ( event ) {
+
+					const saveButton =
+						event.target.closest(
+							'.pdxw-save-rule'
+						);
+
+					if ( saveButton ) {
+
+						const row =
+							saveButton.closest(
+								'tr'
+							);
+
+						const type =
+							row.dataset.ruleType;
+
+						const id =
+							row.dataset.ruleId;
+
+						const markup =
+							validateMarkup(
+								row
+									.querySelector(
+										'.pdxw-rule-markup'
+									)
+									.value
+							);
+
+						if (
+							null === markup
+						) {
+							showNotice(
+								<?php echo wp_json_encode( __( 'Please enter a valid non-negative markup.', 'promi-data-x-woo' ) ); ?>,
+								'error'
+							);
+
+							return;
+						}
+
+						apiFetch(
+							getRulePath(
+								type,
+								id
+							),
+							'POST',
+							{
+								markup_percent:
+									markup,
+							}
+						)
+						.then(
+							function () {
+
+								showNotice(
+									<?php echo wp_json_encode( __( 'Markup saved.', 'promi-data-x-woo' ) ); ?>,
+									'success'
+								);
+							}
+						)
+						.catch(
+							function ( error ) {
+
+								showNotice(
+									error.message
+									|| <?php echo wp_json_encode( __( 'Error saving markup.', 'promi-data-x-woo' ) ); ?>,
+									'error'
+								);
+							}
+						);
+
 						return;
 					}
 
-					const catType = <?php echo wp_json_encode( MarkupRepository::TYPE_CATEGORY ); ?>;
-					const path = type === catType
-						? '/pricing/categories/' + id
-						: '/pricing/print-options/' + id;
 
-					apiFetch( path, 'POST', { markup_percent: markup } ).then( function () {
-						showNotice( <?php echo wp_json_encode( __( 'Markup saved.', 'promi-data-x-woo' ) ); ?>, 'success' );
-					} ).catch( function () {
-						showNotice( <?php echo wp_json_encode( __( 'Error saving markup.', 'promi-data-x-woo' ) ); ?>, 'error' );
-					} );
-				} );
-			} );
+					const deleteButton =
+						event.target.closest(
+							'.pdxw-delete-rule'
+						);
+
+					if ( ! deleteButton ) {
+						return;
+					}
+
+					const row =
+						deleteButton.closest(
+							'tr'
+						);
+
+					const type =
+						row.dataset.ruleType;
+
+					const id =
+						row.dataset.ruleId;
+
+					const name =
+						row
+							.querySelector(
+								'.pdxw-rule-name'
+							)
+							.textContent
+							.trim();
+
+
+					if (
+						! window.confirm(
+							<?php echo wp_json_encode( __( 'Remove the markup override for', 'promi-data-x-woo' ) ); ?>
+							+ ' "'
+							+ name
+							+ '"?'
+						)
+					) {
+						return;
+					}
+
+
+					apiFetch(
+						getRulePath(
+							type,
+							id
+						),
+						'DELETE'
+					)
+					.then(
+						function () {
+
+							const table =
+								row.closest(
+									'table'
+								);
+
+							row.remove();
+
+
+							const select =
+								type === categoryType
+									? document.getElementById(
+										'pdxw-new-category'
+									)
+									: document.getElementById(
+										'pdxw-new-print-option'
+									);
+
+							const option =
+								select.querySelector(
+									'option[value="'
+									+ id
+									+ '"]'
+								);
+
+							if ( option ) {
+								option.disabled = false;
+							}
+
+
+							const tbody =
+								table.querySelector(
+									'tbody'
+								);
+
+							if (
+								! tbody.querySelector(
+									'tr'
+								)
+							) {
+								tbody.innerHTML =
+									'<tr class="pdxw-empty-row">'
+									+ '<td colspan="3">'
+									+ escapeHtml(
+										<?php echo wp_json_encode( __( 'No markup overrides configured.', 'promi-data-x-woo' ) ); ?>
+									)
+									+ '</td></tr>';
+							}
+
+
+							showNotice(
+								<?php echo wp_json_encode( __( 'Markup override removed.', 'promi-data-x-woo' ) ); ?>,
+								'success'
+							);
+						}
+					)
+					.catch(
+						function ( error ) {
+
+							showNotice(
+								error.message
+								|| <?php echo wp_json_encode( __( 'Error removing markup override.', 'promi-data-x-woo' ) ); ?>,
+								'error'
+							);
+						}
+					);
+				}
+			);
 
 		})();
 		</script>
+
 		<?php
 	}
 
 
-	/*
-	|--------------------------------------------------------------------------
-	| State
-	|--------------------------------------------------------------------------
-	*/
-
 	public function is_initialized(): bool {
+
 		return $this->initialized;
 	}
 }

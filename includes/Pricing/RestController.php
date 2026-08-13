@@ -45,6 +45,12 @@ final class RestController {
 
 	public function register_routes(): void {
 
+		/*
+		|--------------------------------------------------------------------------
+		| Default Markups
+		|--------------------------------------------------------------------------
+		*/
+
 		register_rest_route(
 			'pdxw/v1',
 			'/pricing/defaults',
@@ -88,6 +94,12 @@ final class RestController {
 			]
 		);
 
+
+		/*
+		|--------------------------------------------------------------------------
+		| Category Markup Overrides
+		|--------------------------------------------------------------------------
+		*/
 
 		register_rest_route(
 			'pdxw/v1',
@@ -135,6 +147,34 @@ final class RestController {
 
 		register_rest_route(
 			'pdxw/v1',
+			'/pricing/categories/(?P<id>\d+)',
+			[
+				'methods' =>
+					\WP_REST_Server::DELETABLE,
+
+				'permission_callback' =>
+					[
+						$this,
+						'permission',
+					],
+
+				'callback' =>
+					[
+						$this,
+						'delete_category',
+					],
+			]
+		);
+
+
+		/*
+		|--------------------------------------------------------------------------
+		| Print Option Markup Overrides
+		|--------------------------------------------------------------------------
+		*/
+
+		register_rest_route(
+			'pdxw/v1',
 			'/pricing/print-options',
 			[
 				'methods' =>
@@ -175,6 +215,28 @@ final class RestController {
 					],
 			]
 		);
+
+
+		register_rest_route(
+			'pdxw/v1',
+			'/pricing/print-options/(?P<id>\d+)',
+			[
+				'methods' =>
+					\WP_REST_Server::DELETABLE,
+
+				'permission_callback' =>
+					[
+						$this,
+						'permission',
+					],
+
+				'callback' =>
+					[
+						$this,
+						'delete_print_option',
+					],
+			]
+		);
 	}
 
 
@@ -186,27 +248,49 @@ final class RestController {
 	}
 
 
+	/**
+	 * Validate a markup percentage.
+	 *
+	 * Returns a WP_Error instead of throwing an exception so REST clients
+	 * receive a proper JSON validation response.
+	 *
+	 * @return float|\WP_Error
+	 */
 	private function markup(
-		\WP_REST_Request $request
-	): float {
+		\WP_REST_Request $request,
+		string $key = 'markup_percent'
+	) {
 
 		$value =
 			$request->get_param(
-				'markup_percent'
+				$key
 			);
 
 		if (
 			! is_numeric( $value )
 			|| (float) $value < 0
 		) {
-			throw new \InvalidArgumentException(
-				'markup_percent must be a non-negative number.'
+			return new \WP_Error(
+				'pdxw_invalid_markup',
+				sprintf(
+					'%s must be a non-negative number.',
+					$key
+				),
+				[
+					'status' => 400,
+				]
 			);
 		}
 
 		return (float) $value;
 	}
 
+
+	/*
+	|--------------------------------------------------------------------------
+	| Default Markups
+	|--------------------------------------------------------------------------
+	*/
 
 	public function get_defaults(): \WP_REST_Response {
 
@@ -228,32 +312,72 @@ final class RestController {
 
 	public function save_defaults(
 		\WP_REST_Request $request
-	): \WP_REST_Response {
+	) {
 
 		$data =
 			$request->get_json_params();
 
-		if ( isset( $data['article_markup'] ) ) {
+		if ( ! is_array( $data ) ) {
+			$data = [];
+		}
+
+
+		if ( array_key_exists( 'article_markup', $data ) ) {
+
+			$article_markup =
+				$this->markup(
+					$request,
+					'article_markup'
+				);
+
+			if (
+				is_wp_error(
+					$article_markup
+				)
+			) {
+				return $article_markup;
+			}
 
 			$this->pricing
 				->markup_rules()
 				->set_article_default(
-					(float) $data['article_markup']
+					$article_markup
 				);
 		}
 
-		if ( isset( $data['finishing_markup'] ) ) {
+
+		if ( array_key_exists( 'finishing_markup', $data ) ) {
+
+			$finishing_markup =
+				$this->markup(
+					$request,
+					'finishing_markup'
+				);
+
+			if (
+				is_wp_error(
+					$finishing_markup
+				)
+			) {
+				return $finishing_markup;
+			}
 
 			$this->pricing
 				->markup_rules()
 				->set_finishing_default(
-					(float) $data['finishing_markup']
+					$finishing_markup
 				);
 		}
 
 		return $this->get_defaults();
 	}
 
+
+	/*
+	|--------------------------------------------------------------------------
+	| Category Markup Overrides
+	|--------------------------------------------------------------------------
+	*/
 
 	public function get_categories(): \WP_REST_Response {
 
@@ -272,53 +396,144 @@ final class RestController {
 
 	public function save_category(
 		\WP_REST_Request $request
-	): \WP_REST_Response {
+	) {
 
 		$id =
 			absint(
 				$request['id']
 			);
 
-		if (
-			! get_term(
+		$term =
+			get_term(
 				$id,
 				'product_cat'
-			)
+			);
+
+		if (
+			! $term
+			|| is_wp_error( $term )
 		) {
-			return new \WP_REST_Response(
+			return new \WP_Error(
+				'pdxw_category_not_found',
+				'Category not found.',
 				[
-					'message' =>
-						'Category not found.',
-				],
-				404
+					'status' => 404,
+				]
 			);
 		}
 
-		$this->pricing
-			->markup_repository()
-			->save(
-				MarkupRepository::TYPE_CATEGORY,
-				$id,
-				$this->markup(
-					$request
-				)
+
+		$markup =
+			$this->markup(
+				$request
 			);
+
+		if (
+			is_wp_error(
+				$markup
+			)
+		) {
+			return $markup;
+		}
+
+
+		$saved =
+			$this->pricing
+				->markup_repository()
+				->save(
+					MarkupRepository::TYPE_CATEGORY,
+					$id,
+					$markup
+				);
+
+		if ( ! $saved ) {
+			return new \WP_Error(
+				'pdxw_category_markup_save_failed',
+				'Could not save category markup.',
+				[
+					'status' => 500,
+				]
+			);
+		}
+
 
 		return new \WP_REST_Response(
 			[
 				'id' =>
 					$id,
 
+				'name' =>
+					$term->name,
+
 				'markup_percent' =>
-					$this->pricing
-						->markup_rules()
-						->article_markup(
-							0
-						),
+					$markup,
 			]
 		);
 	}
 
+
+	public function delete_category(
+		\WP_REST_Request $request
+	) {
+
+		$id =
+			absint(
+				$request['id']
+			);
+
+		$term =
+			get_term(
+				$id,
+				'product_cat'
+			);
+
+		if (
+			! $term
+			|| is_wp_error( $term )
+		) {
+			return new \WP_Error(
+				'pdxw_category_not_found',
+				'Category not found.',
+				[
+					'status' => 404,
+				]
+			);
+		}
+
+
+		$deleted =
+			$this->pricing
+				->markup_repository()
+				->delete(
+					MarkupRepository::TYPE_CATEGORY,
+					$id
+				);
+
+		if ( ! $deleted ) {
+			return new \WP_Error(
+				'pdxw_category_markup_delete_failed',
+				'Could not delete category markup.',
+				[
+					'status' => 500,
+				]
+			);
+		}
+
+
+		return new \WP_REST_Response(
+			[
+				'id'      => $id,
+				'deleted' => true,
+			]
+		);
+	}
+
+
+	/*
+	|--------------------------------------------------------------------------
+	| Print Option Markup Overrides
+	|--------------------------------------------------------------------------
+	*/
 
 	public function get_print_options(): \WP_REST_Response {
 
@@ -334,7 +549,7 @@ final class RestController {
 
 	public function save_print_option(
 		\WP_REST_Request $request
-	): \WP_REST_Response {
+	) {
 
 		$id =
 			absint(
@@ -342,24 +557,49 @@ final class RestController {
 			);
 
 		if ( ! $id ) {
-			return new \WP_REST_Response(
+			return new \WP_Error(
+				'pdxw_print_option_not_found',
+				'Print option not found.',
 				[
-					'message' =>
-						'Print option not found.',
-				],
-				404
+					'status' => 404,
+				]
 			);
 		}
 
-		$this->pricing
-			->markup_repository()
-			->save(
-				MarkupRepository::TYPE_PRINT_OPTION,
-				$id,
-				$this->markup(
-					$request
-				)
+
+		$markup =
+			$this->markup(
+				$request
 			);
+
+		if (
+			is_wp_error(
+				$markup
+			)
+		) {
+			return $markup;
+		}
+
+
+		$saved =
+			$this->pricing
+				->markup_repository()
+				->save(
+					MarkupRepository::TYPE_PRINT_OPTION,
+					$id,
+					$markup
+				);
+
+		if ( ! $saved ) {
+			return new \WP_Error(
+				'pdxw_print_option_markup_save_failed',
+				'Could not save print option markup.',
+				[
+					'status' => 500,
+				]
+			);
+		}
+
 
 		return new \WP_REST_Response(
 			[
@@ -367,11 +607,55 @@ final class RestController {
 					$id,
 
 				'markup_percent' =>
-					$this->pricing
-						->markup_rules()
-						->finishing_markup(
-							$id
-						),
+					$markup,
+			]
+		);
+	}
+
+
+	public function delete_print_option(
+		\WP_REST_Request $request
+	) {
+
+		$id =
+			absint(
+				$request['id']
+			);
+
+		if ( ! $id ) {
+			return new \WP_Error(
+				'pdxw_print_option_not_found',
+				'Print option not found.',
+				[
+					'status' => 404,
+				]
+			);
+		}
+
+
+		$deleted =
+			$this->pricing
+				->markup_repository()
+				->delete(
+					MarkupRepository::TYPE_PRINT_OPTION,
+					$id
+				);
+
+		if ( ! $deleted ) {
+			return new \WP_Error(
+				'pdxw_print_option_markup_delete_failed',
+				'Could not delete print option markup.',
+				[
+					'status' => 500,
+				]
+			);
+		}
+
+
+		return new \WP_REST_Response(
+			[
+				'id'      => $id,
+				'deleted' => true,
 			]
 		);
 	}
