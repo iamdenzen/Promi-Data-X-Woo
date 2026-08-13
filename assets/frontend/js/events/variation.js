@@ -258,6 +258,36 @@ window.CX = window.CX || {};
 					);
 
 
+					CX.state.price_on_request =
+						!! data.price_on_request;
+
+
+					$form
+						.attr(
+							"data-price-on-request",
+							CX.state.price_on_request ? "1" : "0"
+						)
+						.toggleClass(
+							"cx-por-active",
+							CX.state.price_on_request
+						);
+
+					$form
+						.find( ".cx-cart-btn" )
+						.toggle( ! CX.state.price_on_request );
+
+					$form
+						.find( ".cx-por-notice" )
+						.toggle( CX.state.price_on_request );
+
+					$form
+						.find( ".cx-offer-btn" )
+						.toggleClass(
+							"alt",
+							! CX.state.price_on_request
+						);
+
+
 					$(".cxatc-error")
 						.hide();
 

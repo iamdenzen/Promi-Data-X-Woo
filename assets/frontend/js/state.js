@@ -141,5 +141,17 @@ CX.state = {
 	|     manually entered custom quantity
 	*/
 
-	isCustomQty: false
+	isCustomQty: false,
+
+
+	/*
+	|--------------------------------------------------------------------------
+	| Price on Request
+	|--------------------------------------------------------------------------
+	|
+	| Set to true when the selected variation has no calculable purchase price.
+	| Updated by handleVariationChange after each variation AJAX response.
+	*/
+
+	price_on_request: false
 };

@@ -19,12 +19,23 @@ defined( 'ABSPATH' ) || exit;
  * Responsibilities:
  *
  * - Normalize print selections stored in cart items.
- * - Expose printing context to the unified pricing engine.
+ * - Expose printing context to the unified Pricing Engine.
+ * - Calculate the authoritative printing breakdown.
  * - Display selected printing in cart and checkout.
  * - Save selected printing onto WooCommerce order items.
  * - Validate selections before pricing.
  *
- * Adding products to the cart remains a Frontend/configurator concern.
+ * This class does NOT set WooCommerce prices directly.
+ *
+ * Price calculation belongs to:
+ *
+ *     Pricing\CartPricing
+ *          ↓
+ *     Pricing\Engine
+ *          ↓
+ *     Printing\Calculator
+ *
+ * This keeps printing as one stage of the unified pricing pipeline.
  */
 final class CartPricing {
 
@@ -37,8 +48,12 @@ final class CartPricing {
 		Printing $printing,
 		Calculator $calculator
 	) {
-		$this->printing   = $printing;
-		$this->calculator = $calculator;
+
+		$this->printing =
+			$printing;
+
+		$this->calculator =
+			$calculator;
 	}
 
 
@@ -55,7 +70,10 @@ final class CartPricing {
 
 		add_filter(
 			'woocommerce_get_item_data',
-			[ $this, 'display_cart_data' ],
+			[
+				$this,
+				'display_cart_data',
+			],
 			10,
 			2
 		);
@@ -69,7 +87,10 @@ final class CartPricing {
 
 		add_action(
 			'woocommerce_checkout_create_order_line_item',
-			[ $this, 'add_order_meta' ],
+			[
+				$this,
+				'add_order_meta',
+			],
 			10,
 			4
 		);
@@ -77,21 +98,20 @@ final class CartPricing {
 
 		/*
 		|--------------------------------------------------------------------------
-		| Pricing Context
+		| Unified Pricing Context
 		|--------------------------------------------------------------------------
 		|
-		| Pricing itself is NOT applied here.
+		| Printing does not calculate the WooCommerce price here.
 		|
-		| The existing CX Print plugin already stopped doing direct
-		| woocommerce_before_calculate_totals pricing and moved that job to
-		| CX_Pricing_Engine.
-		|
-		| We keep that architecture.
+		| It enriches the context consumed by Pricing\Engine.
 		*/
 
 		add_filter(
 			'pdxw_pricing_context',
-			[ $this, 'add_pricing_context' ],
+			[
+				$this,
+				'add_pricing_context',
+			],
 			20,
 			2
 		);
@@ -105,7 +125,8 @@ final class CartPricing {
 	*/
 
 	/**
-	 * Add print selections to the unified Pricing Engine context.
+	 * Add printing selections and the authoritative printing breakdown to
+	 * the unified Pricing Engine context.
 	 *
 	 * Expected base context:
 	 *
@@ -115,41 +136,71 @@ final class CartPricing {
 	 *     'quantity'     => 100,
 	 *     'cart_item'    => [...],
 	 * ]
+	 *
+	 * The resulting context contains:
+	 *
+	 * [
+	 *     'printing' => [...],
+	 *     'printing_breakdown' => [
+	 *         'unit_price' => ...,
+	 *         'print_total' => ...,
+	 *         'setup_total' => ...,
+	 *         'ongoing_fee_total' => ...,
+	 *         'fees' => ...,
+	 *         'total' => ...,
+	 *         'per_unit' => ...,
+	 *     ],
+	 * ]
 	 */
 	public function add_pricing_context(
 		array $context,
 		array $cart_item
 	): array {
 
-		$selections = $this->selections(
-			$cart_item
-		);
+		$selections =
+			$this->selections(
+				$cart_item
+			);
+
 
 		if ( empty( $selections ) ) {
 			return $context;
 		}
 
-		$product_id = absint(
-			$cart_item['product_id']
-			?? $context['product_id']
-			?? 0
-		);
 
-		$variation_id = absint(
-			$cart_item['variation_id']
-			?? $context['variation_id']
-			?? 0
-		);
+		$product_id =
+			absint(
+				$cart_item['product_id']
+					?? $context['product_id']
+					?? 0
+			);
+
+
+		$variation_id =
+			absint(
+				$cart_item['variation_id']
+					?? $context['variation_id']
+					?? 0
+			);
+
 
 		/*
-		 * CX_Print::validate_selection() historically validates against
-		 * the variation when present, otherwise against the parent product.
-		 */
-		$entity_id = $variation_id
-			?: $product_id;
+		|--------------------------------------------------------------------------
+		| Validate Against Variation / Product
+		|--------------------------------------------------------------------------
+		|
+		| Variations take precedence because the available print options can
+		| differ by variation.
+		*/
+
+		$entity_id =
+			$variation_id
+				?: $product_id;
+
 
 		if (
-			! $this->validate(
+			! $entity_id
+			|| ! $this->validate(
 				$entity_id,
 				$selections
 			)
@@ -157,26 +208,68 @@ final class CartPricing {
 			return $context;
 		}
 
-		$context['printing'] =
-			$this->to_calculator_selections(
-				$selections
-			);
 
-		$calculator_selections =
-			$this->to_calculator_selections(
-				$selections
-			);
+		/*
+		|--------------------------------------------------------------------------
+		| Quantity
+		|--------------------------------------------------------------------------
+		*/
 
 		$quantity =
 			max(
 				1,
 				absint(
 					$cart_item['quantity']
-					?? $context['quantity']
-					?? 1
+						?? $context['quantity']
+						?? 1
 				)
 			);
 
+
+		/*
+		|--------------------------------------------------------------------------
+		| Minimum Quantity
+		|--------------------------------------------------------------------------
+		|
+		| Keep this defensive. The configurator should normally have already
+		| enforced minimum quantities before the item enters the cart.
+		|
+		| We do not silently remove selections here because changing cart
+		| contents while the pricing filter is running is unsafe.
+		*/
+
+		$calculator_selections =
+			$this->to_calculator_selections(
+				$selections
+			);
+
+
+		if (
+			empty(
+				$calculator_selections
+			)
+		) {
+			return $context;
+		}
+
+
+		/*
+		|--------------------------------------------------------------------------
+		| Authoritative Printing Calculation
+		|--------------------------------------------------------------------------
+		|
+		| Calculator is now the only class responsible for:
+		|
+		| - print purchase costs,
+		| - finishing markup,
+		| - setup rounding,
+		| - ongoing/no-rounding rules.
+		|
+		| We calculate this once here.
+		|
+		| Printing\Calculator::apply() will reuse this breakdown when the
+		| Pricing Engine executes priority 20.
+		*/
 
 		$printing_breakdown =
 			$this->calculator
@@ -195,21 +288,41 @@ final class CartPricing {
 				);
 
 
+		/*
+		|--------------------------------------------------------------------------
+		| Add Printing Context
+		|--------------------------------------------------------------------------
+		*/
+
 		$context['printing'] =
 			$calculator_selections;
 
-
-		/*
-		|--------------------------------------------------------------------------
-		| Authoritative Printing Breakdown
-		|--------------------------------------------------------------------------
-		*/
 
 		$context['printing_breakdown'] =
 			$printing_breakdown;
 
 
-		return $context;
+		/*
+		|--------------------------------------------------------------------------
+		| Allow Later Pricing Modules to Enrich Context
+		|--------------------------------------------------------------------------
+		|
+		| Keep the context extensible without introducing another pricing
+		| calculation path.
+		*/
+
+		$context =
+			apply_filters(
+				'pdxw_printing_pricing_context',
+				$context,
+				$cart_item,
+				$printing_breakdown
+			);
+
+
+		return is_array( $context )
+			? $context
+			: [];
 	}
 
 
@@ -222,31 +335,54 @@ final class CartPricing {
 	/**
 	 * Display selected print options underneath the cart item.
 	 *
-	 * This reproduces CX_Print_Cart::display_cart_data().
+	 * This preserves the existing CX Print visible cart structure:
+	 *
+	 *     Position Label → Print Option Name
 	 */
 	public function display_cart_data(
 		array $data,
 		array $cart_item
 	): array {
 
-		$selections = $this->selections(
-			$cart_item
-		);
+		$selections =
+			$this->selections(
+				$cart_item
+			);
+
 
 		if ( empty( $selections ) ) {
 			return $data;
 		}
 
+
 		foreach (
-			$selections as $position_id => $option_id
+			$selections as $position_id => $selection
 		) {
+
+			$option_id =
+				absint(
+					$selection['option_id']
+						?? 0
+				);
+
+
+			if (
+				! $position_id
+				|| ! $option_id
+			) {
+				continue;
+			}
+
 
 			$position =
 				$this->printing
 					->positions()
 					->find(
-						$position_id
+						absint(
+							$position_id
+						)
 					);
+
 
 			$option =
 				$this->printing
@@ -255,6 +391,7 @@ final class CartPricing {
 						$option_id
 					);
 
+
 			if (
 				! $position
 				|| ! $option
@@ -262,7 +399,9 @@ final class CartPricing {
 				continue;
 			}
 
+
 			$data[] = [
+
 				'name' =>
 					(string)
 						$position
@@ -274,6 +413,7 @@ final class CartPricing {
 							->name,
 			];
 		}
+
 
 		return $data;
 	}
@@ -288,11 +428,12 @@ final class CartPricing {
 	/**
 	 * Save printing selections to WooCommerce order items.
 	 *
-	 * The existing CX Print plugin saves:
+	 * Visible metadata remains:
 	 *
 	 *     Position Label => Print Option Name
 	 *
-	 * We preserve that visible order metadata exactly.
+	 * A private structured representation is also stored so historical
+	 * orders retain the IDs even if an option is renamed later.
 	 */
 	public function add_order_meta(
 		\WC_Order_Item_Product $item,
@@ -301,24 +442,51 @@ final class CartPricing {
 		\WC_Order $order
 	): void {
 
-		$selections = $this->selections(
-			$values
-		);
+		$selections =
+			$this->selections(
+				$values
+			);
+
 
 		if ( empty( $selections ) ) {
 			return;
 		}
 
+
+		/*
+		|--------------------------------------------------------------------------
+		| Human-readable metadata
+		|--------------------------------------------------------------------------
+		*/
+
 		foreach (
-			$selections as $position_id => $option_id
+			$selections as $position_id => $selection
 		) {
+
+			$option_id =
+				absint(
+					$selection['option_id']
+						?? 0
+				);
+
+
+			if (
+				! $position_id
+				|| ! $option_id
+			) {
+				continue;
+			}
+
 
 			$position =
 				$this->printing
 					->positions()
 					->find(
-						$position_id
+						absint(
+							$position_id
+						)
 					);
+
 
 			$option =
 				$this->printing
@@ -327,12 +495,14 @@ final class CartPricing {
 						$option_id
 					);
 
+
 			if (
 				! $position
 				|| ! $option
 			) {
 				continue;
 			}
+
 
 			$item->add_meta_data(
 				(string)
@@ -348,16 +518,11 @@ final class CartPricing {
 
 		/*
 		|--------------------------------------------------------------------------
-		| Internal Structured Metadata
+		| Private Structured Metadata
 		|--------------------------------------------------------------------------
 		|
-		| The old plugin only stored the human-readable position/option
-		| metadata.
-		|
-		| For the rebuild I also recommend storing the IDs privately.
-		|
-		| This gives us reliable historical data if an option is renamed,
-		| without changing anything visible in WooCommerce.
+		| This is intentionally private so it does not appear as normal
+		| customer-facing order metadata.
 		*/
 
 		$item->add_meta_data(
@@ -375,13 +540,24 @@ final class CartPricing {
 	*/
 
 	/**
-	 * Extract and normalize legacy cx_print cart data.
+	 * Extract and normalize cx_print cart data.
 	 *
-	 * Canonical cart format remains:
+	 * Canonical legacy structure:
 	 *
 	 * [
 	 *     position_id => option_id,
 	 * ]
+	 *
+	 * Internally we normalize this into:
+	 *
+	 * [
+	 *     position_id => [
+	 *         'option_id' => option_id,
+	 *         'colors'    => optional color count,
+	 *     ],
+	 * ]
+	 *
+	 * The old format remains fully supported.
 	 */
 	public function selections(
 		array $cart_item
@@ -398,32 +574,129 @@ final class CartPricing {
 			return [];
 		}
 
+
 		$selections = [];
+
 
 		foreach (
 			$cart_item['cx_print']
-				as $position_id => $option_id
+				as $position_id => $raw_option
 		) {
 
-			$position_id = absint(
-				$position_id
-			);
+			$position_id =
+				absint(
+					$position_id
+				);
 
-			$option_id = absint(
-				$option_id
-			);
+
+			if ( ! $position_id ) {
+				continue;
+			}
+
+
+			/*
+			|--------------------------------------------------------------------------
+			| Existing Structure
+			|--------------------------------------------------------------------------
+			|
+			|     position_id => option_id
+			|
+			*/
 
 			if (
-				! $position_id
-				|| ! $option_id
+				is_scalar(
+					$raw_option
+				)
+			) {
+
+				$option_id =
+					absint(
+						$raw_option
+					);
+
+
+				if ( ! $option_id ) {
+					continue;
+				}
+
+
+				$selections[
+					$position_id
+				] = [
+
+					'option_id' =>
+						$option_id,
+
+					'colors' =>
+						0,
+				];
+
+
+				continue;
+			}
+
+
+			/*
+			|--------------------------------------------------------------------------
+			| Extended Structure
+			|--------------------------------------------------------------------------
+			|
+			| This allows future configurator code to provide:
+			|
+			| [
+			|     'option_id' => 123,
+			|     'colors'    => 2,
+			| ]
+			|
+			| without breaking the old cart format.
+			*/
+
+			if (
+				! is_array(
+					$raw_option
+				)
 			) {
 				continue;
 			}
 
+
+			$option_id =
+				absint(
+					$raw_option['option_id']
+						?? $raw_option['print_option_id']
+						?? $raw_option['option']
+						?? 0
+				);
+
+
+			if ( ! $option_id ) {
+				continue;
+			}
+
+
+			$colors =
+				max(
+					0,
+					absint(
+						$raw_option['colors']
+							?? $raw_option['color_count']
+							?? 0
+					)
+				);
+
+
 			$selections[
 				$position_id
-			] = $option_id;
+			] = [
+
+				'option_id' =>
+					$option_id,
+
+				'colors' =>
+					$colors,
+			];
 		}
+
 
 		return $selections;
 	}
@@ -432,41 +705,145 @@ final class CartPricing {
 	/**
 	 * Normalize data before it is stored by the configurator.
 	 *
-	 * This will be called later by Frontend/Ajax.php.
+	 * This remains compatible with the existing:
+	 *
+	 *     position_id => option_id
+	 *
+	 * structure.
+	 *
+	 * Extended selection data is also accepted.
 	 */
 	public function sanitize_selections(
 		mixed $raw
 	): array {
 
-		if ( ! is_array( $raw ) ) {
+		if (
+			! is_array(
+				$raw
+			)
+		) {
 			return [];
 		}
 
+
 		$selections = [];
 
+
 		foreach (
-			$raw as $position_id => $option_id
+			$raw as $position_id => $raw_option
 		) {
 
-			$position_id = absint(
-				$position_id
-			);
+			$position_id =
+				absint(
+					$position_id
+				);
 
-			$option_id = absint(
-				$option_id
-			);
+
+			if ( ! $position_id ) {
+				continue;
+			}
+
+
+			/*
+			|--------------------------------------------------------------------------
+			| Legacy scalar option ID
+			|--------------------------------------------------------------------------
+			*/
 
 			if (
-				! $position_id
-				|| ! $option_id
+				is_scalar(
+					$raw_option
+				)
+			) {
+
+				$option_id =
+					absint(
+						$raw_option
+					);
+
+
+				if ( ! $option_id ) {
+					continue;
+				}
+
+
+				$selections[
+					$position_id
+				] =
+					$option_id;
+
+
+				continue;
+			}
+
+
+			/*
+			|--------------------------------------------------------------------------
+			| Extended selection
+			|--------------------------------------------------------------------------
+			*/
+
+			if (
+				! is_array(
+					$raw_option
+				)
 			) {
 				continue;
 			}
 
+
+			$option_id =
+				absint(
+					$raw_option['option_id']
+						?? $raw_option['print_option_id']
+						?? $raw_option['option']
+						?? 0
+				);
+
+
+			if ( ! $option_id ) {
+				continue;
+			}
+
+
+			$colors =
+				max(
+					0,
+					absint(
+						$raw_option['colors']
+							?? $raw_option['color_count']
+							?? 0
+					)
+				);
+
+
+			/*
+			 * Preserve the simple legacy representation whenever no
+			 * additional information is supplied.
+			 */
+			if ( ! $colors ) {
+
+				$selections[
+					$position_id
+				] =
+					$option_id;
+
+				continue;
+			}
+
+
 			$selections[
 				$position_id
-			] = $option_id;
+			] = [
+
+				'option_id' =>
+					$option_id,
+
+				'colors' =>
+					$colors,
+			];
 		}
+
 
 		return $selections;
 	}
@@ -475,7 +852,8 @@ final class CartPricing {
 	/**
 	 * Validate every print selection.
 	 *
-	 * This reproduces CX_Print::validate_selection().
+	 * This preserves the existing validation architecture and repository
+	 * method.
 	 */
 	public function validate(
 		int $product_or_variation_id,
@@ -487,34 +865,45 @@ final class CartPricing {
 				$product_or_variation_id
 			);
 
+
 		if (
 			! $product_or_variation_id
-			|| empty( $selections )
+			|| empty(
+				$selections
+			)
 		) {
 			return false;
 		}
 
+
 		foreach (
-			$selections
-				as $position_id => $option_id
+			$selections as $position_id => $selection
 		) {
 
+			$option_id =
+				absint(
+					$selection['option_id']
+						?? $selection
+				);
+
+
 			if (
-				! $this->printing
+				! $option_id
+				|| ! $this->printing
 					->repository()
 					->selection_is_valid(
 						$product_or_variation_id,
 						absint(
 							$position_id
 						),
-						absint(
-							$option_id
-						)
+						$option_id
 					)
 			) {
+
 				return false;
 			}
 		}
+
 
 		return true;
 	}
@@ -523,66 +912,109 @@ final class CartPricing {
 	/**
 	 * Remove print options that do not meet their minimum order quantity.
 	 *
-	 * The existing cx-product AJAX add-to-cart handler performs exactly
-	 * this check before adding cx_print to the cart.
+	 * The configurator can call this before storing cx_print.
 	 *
-	 * We move the rule into Printing so the frontend does not need to know
-	 * how print options work internally.
+	 * We retain the existing behavior rather than mutating cart contents
+	 * during WooCommerce price calculation.
 	 */
 	public function enforce_minimum_quantity(
 		array $selections,
 		int $quantity
 	): array {
 
-		$quantity = max(
-			1,
-			absint(
-				$quantity
-			)
-		);
+		$quantity =
+			max(
+				1,
+				absint(
+					$quantity
+				)
+			);
+
 
 		if ( empty( $selections ) ) {
 			return [];
 		}
 
+
+		$option_ids = [];
+
+
+		foreach (
+			$selections as $selection
+		) {
+
+			$option_id =
+				absint(
+					$selection['option_id']
+						?? $selection
+				);
+
+
+			if ( $option_id ) {
+				$option_ids[] =
+					$option_id;
+			}
+		}
+
+
+		$option_ids =
+			array_values(
+				array_unique(
+					$option_ids
+				)
+			);
+
+
+		if ( empty( $option_ids ) ) {
+			return [];
+		}
+
+
 		$options =
 			$this->printing
 				->options()
 				->by_ids(
-					array_values(
-						$selections
-					)
+					$option_ids
 				);
+
 
 		if ( empty( $options ) ) {
 			return [];
 		}
 
+
 		$minimums = [];
 
-		foreach ( $options as $option ) {
+
+		foreach (
+			$options as $option
+		) {
 
 			$minimums[
 				(int) $option->id
-			] = max(
-				1,
-				(int)
-					$option
-						->min_order_qty
-			);
+			] =
+				max(
+					1,
+					(int)
+						$option
+							->min_order_qty
+				);
 		}
 
+
 		foreach (
-			$selections
-				as $position_id => $option_id
+			$selections as $position_id => $selection
 		) {
 
-			$option_id = absint(
-				$option_id
-			);
+			$option_id =
+				absint(
+					$selection['option_id']
+						?? $selection
+				);
+
 
 			/*
-			 * Unknown options are removed as well.
+			 * Unknown options are removed.
 			 */
 			if (
 				! isset(
@@ -590,11 +1022,26 @@ final class CartPricing {
 						$option_id
 					]
 				)
-				|| $quantity
-					< $minimums[
-						$option_id
-					]
 			) {
+
+				unset(
+					$selections[
+						$position_id
+					]
+				);
+
+				continue;
+			}
+
+
+			if (
+				$quantity
+				<
+				$minimums[
+					$option_id
+				]
+			) {
+
 				unset(
 					$selections[
 						$position_id
@@ -602,6 +1049,7 @@ final class CartPricing {
 				);
 			}
 		}
+
 
 		return $selections;
 	}
@@ -614,13 +1062,15 @@ final class CartPricing {
 	*/
 
 	/**
-	 * Convert legacy cx_print data into Calculator input.
+	 * Convert normalized cart selections into Calculator input.
 	 *
 	 * Legacy:
 	 *
 	 * [
-	 *     15 => 8,
-	 *     19 => 11,
+	 *     15 => [
+	 *         'option_id' => 8,
+	 *         'colors'    => 0,
+	 *     ],
 	 * ]
 	 *
 	 * Calculator:
@@ -629,6 +1079,7 @@ final class CartPricing {
 	 *     [
 	 *         'position_id' => 15,
 	 *         'option_id'   => 8,
+	 *         'colors'      => 0,
 	 *     ],
 	 * ]
 	 */
@@ -638,23 +1089,57 @@ final class CartPricing {
 
 		$result = [];
 
+
 		foreach (
-			$selections
-				as $position_id => $option_id
+			$selections as $position_id => $selection
 		) {
 
+			$option_id =
+				absint(
+					$selection['option_id']
+						?? $selection
+				);
+
+
+			if (
+				! $position_id
+				|| ! $option_id
+			) {
+				continue;
+			}
+
+
+			$colors =
+				max(
+					0,
+					absint(
+						is_array(
+							$selection
+						)
+							? (
+								$selection['colors']
+									?? 0
+							)
+							: 0
+					)
+				);
+
+
 			$result[] = [
+
 				'position_id' =>
 					absint(
 						$position_id
 					),
 
 				'option_id' =>
-					absint(
-						$option_id
-					),
+					$option_id,
+
+				'colors' =>
+					$colors,
 			];
 		}
+
 
 		return $result;
 	}

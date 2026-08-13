@@ -441,9 +441,9 @@ final class ProductSync {
 
 		if ( null !== $regular_price ) {
 
-			$product->set_regular_price(
+			/*$product->set_regular_price(
 				(string) $regular_price
-			);
+			);*/
 
 			$product->update_meta_data(
 				'qty_increments',
@@ -843,9 +843,9 @@ final class ProductSync {
 
 		if ( null !== $regular_price ) {
 
-			$variation->set_regular_price(
+			/*$variation->set_regular_price(
 				(string) $regular_price
-			);
+			);*/
 
 			$variation->update_meta_data(
 				'qty_increments',
@@ -973,13 +973,10 @@ final class ProductSync {
 			$child
 		);
 
-		$this->pricing->replace_promi_tiers(
+		$this->pricing->sync_promi(
 			$product_id,
 			$variation_id,
-			$price_data['RecommendedSellingPrice']
-				?? [],
-			$price_data['GeneralBuyingPrice']
-				?? []
+			$price_data
 		);
 	}
 

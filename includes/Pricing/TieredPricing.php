@@ -9,19 +9,37 @@ defined( 'ABSPATH' ) || exit;
  *
  * Responsibilities:
  *
- * - Normalize tier data.
- * - Resolve selling and purchase prices.
- * - Apply selling tiers to the unified pricing engine.
+ * - Normalize raw Promi tier data.
+ * - Resolve article selling prices through CostCalculator.
+ * - Apply article pricing to the unified pricing engine.
  * - Synchronize Promi price structures.
  * - Replace selling / purchase / combined tiers.
- * - Keep the WooCommerce regular price synchronized with the lowest
- *   available selling tier.
+ * - Keep WooCommerce's stored catalog price synchronized with the
+ *   calculated article price.
  *
  * Direct database access belongs in PriceRepository.
+ *
+ * Important:
+ *
+ * Promi's RecommendedSellingPrice is NOT the final storefront price.
+ *
+ * The final article price is calculated from:
+ *
+ *     GeneralBuyingPrice
+ *         OR
+ *     RecommendedSellingPrice - manufacturer discount
+ *
+ * followed by:
+ *
+ *     category markup
+ *
+ * Therefore this class never treats the raw Promi selling price as the
+ * authoritative customer price.
  */
 final class TieredPricing {
 
 	private PriceRepository $repository;
+
 	private CostCalculator $costs;
 
 
@@ -29,8 +47,11 @@ final class TieredPricing {
 		PriceRepository $repository,
 		CostCalculator $costs
 	) {
-		$this->repository = $repository;
-		$this->costs = $costs;
+		$this->repository =
+			$repository;
+
+		$this->costs =
+			$costs;
 	}
 
 
@@ -45,8 +66,13 @@ final class TieredPricing {
 	 *
 	 * The engine passes in the current unit price.
 	 *
-	 * If an applicable selling tier exists, it replaces that price.
-	 * Otherwise the incoming price is returned unchanged.
+	 * When an applicable article cost exists, this method returns the
+	 * calculated customer article price.
+	 *
+	 * When no usable price exists, the engine receives 0.0.
+	 *
+	 * The price-on-request state itself is preserved by the pricing
+	 * breakdown/context handled by the surrounding Pricing layer.
 	 *
 	 * Expected context:
 	 *
@@ -67,11 +93,13 @@ final class TieredPricing {
 					?? 0
 			);
 
+
 		$variation_id =
 			absint(
 				$context['variation_id']
 					?? 0
 			);
+
 
 		$quantity =
 			max(
@@ -82,6 +110,7 @@ final class TieredPricing {
 						?? 1
 				)
 			);
+
 
 		if ( ! $product_id ) {
 			return 0.0;
@@ -96,17 +125,6 @@ final class TieredPricing {
 					$quantity
 				);
 
-
-		/*
-		|--------------------------------------------------------------------------
-		| Case 3
-		|--------------------------------------------------------------------------
-		|
-		| A zero price here is intentional.
-		|
-		| CartPricing separately sees the price_on_request status and prevents
-		| printing from creating a fake priced cart item.
-		*/
 
 		if (
 			CostCalculator::STATUS_PRICE_ON_REQUEST
@@ -124,17 +142,32 @@ final class TieredPricing {
 	}
 
 
+	/**
+	 * Return the complete calculated article-price result.
+	 *
+	 * This is useful to callers that need the calculation breakdown rather
+	 * than only the final number.
+	 */
 	public function article_price(
 		int $product_id,
-		int $variation_id,
-		int $quantity
+		int $variation_id = 0,
+		int $quantity = 1
 	): array {
 
 		return $this->costs
 			->calculate(
-				$product_id,
-				$variation_id,
-				$quantity
+				absint(
+					$product_id
+				),
+				absint(
+					$variation_id
+				),
+				max(
+					1,
+					absint(
+						$quantity
+					)
+				)
 			);
 	}
 
@@ -146,7 +179,11 @@ final class TieredPricing {
 	*/
 
 	/**
-	 * Return the applicable selling price.
+	 * Return the calculated customer selling price.
+	 *
+	 * This is NOT Promi's raw RecommendedSellingPrice.
+	 *
+	 * Returns null for Case 3 / Price on request.
 	 */
 	public function selling_price(
 		int $product_id,
@@ -157,13 +194,18 @@ final class TieredPricing {
 		$result =
 			$this->costs
 				->calculate(
-					$product_id,
-					$variation_id,
+					absint(
+						$product_id
+					),
+					absint(
+						$variation_id
+					),
 					max(
 						1,
 						$quantity
 					)
 				);
+
 
 		if (
 			CostCalculator::STATUS_PRICE_ON_REQUEST
@@ -172,16 +214,17 @@ final class TieredPricing {
 			return null;
 		}
 
+
 		return (float)
 			$result['article_price'];
 	}
 
 
 	/**
-	 * Return all applicable selling tiers.
+	 * Return the raw Promi selling tiers.
 	 *
-	 * Variation tiers are returned when present.
-	 * Otherwise parent tiers are returned.
+	 * These values are source data and must not be confused with the final
+	 * storefront selling prices.
 	 */
 	public function selling_tiers(
 		int $product_id,
@@ -190,15 +233,19 @@ final class TieredPricing {
 
 		return $this->repository
 			->get_selling_tiers(
-				$product_id,
-				$variation_id
+				absint(
+					$product_id
+				),
+				absint(
+					$variation_id
+				)
 			);
 	}
 
 
 	/**
-	 * Replace selling tiers while preserving purchasing values at matching
-	 * quantities.
+	 * Replace raw Promi selling tiers while preserving purchase values at
+	 * matching quantities.
 	 */
 	public function replace_selling(
 		int $product_id,
@@ -207,40 +254,49 @@ final class TieredPricing {
 		bool $update_wc_price = true
 	): bool {
 
-		$product_id = absint(
-			$product_id
-		);
+		$product_id =
+			absint(
+				$product_id
+			);
 
-		$variation_id = absint(
-			$variation_id
-		);
+		$variation_id =
+			absint(
+				$variation_id
+			);
+
 
 		if ( ! $product_id ) {
 			return false;
 		}
 
-		$clean = $this->normalize_selling_tiers(
-			$tiers
-		);
 
-		$result = $this->repository
-			->replace_selling(
-				$product_id,
-				$variation_id,
-				$clean
+		$clean =
+			$this->normalize_selling_tiers(
+				$tiers
 			);
+
+
+		$result =
+			$this->repository
+				->replace_selling(
+					$product_id,
+					$variation_id,
+					$clean
+				);
+
 
 		if (
 			$result
 			&& $update_wc_price
-			&& ! empty( $clean )
 		) {
-			$this->sync_woocommerce_price(
+
+			$this->sync_woocommerce_price_from_tiers(
 				$product_id,
 				$variation_id,
 				$clean
 			);
 		}
+
 
 		return $result;
 	}
@@ -253,7 +309,9 @@ final class TieredPricing {
 	*/
 
 	/**
-	 * Return the applicable purchasing price.
+	 * Return the raw applicable Promi purchase price.
+	 *
+	 * This is the GeneralBuyingPrice source used by Case 1.
 	 */
 	public function purchase_price(
 		int $product_id,
@@ -263,15 +321,22 @@ final class TieredPricing {
 
 		return $this->repository
 			->get_applicable_purchase_price(
-				$product_id,
-				$variation_id,
-				$quantity
+				absint(
+					$product_id
+				),
+				absint(
+					$variation_id
+				),
+				max(
+					1,
+					$quantity
+				)
 			);
 	}
 
 
 	/**
-	 * Return all applicable purchasing tiers.
+	 * Return all raw Promi purchasing tiers.
 	 */
 	public function purchase_tiers(
 		int $product_id,
@@ -280,8 +345,12 @@ final class TieredPricing {
 
 		return $this->repository
 			->get_purchase_tiers(
-				$product_id,
-				$variation_id
+				absint(
+					$product_id
+				),
+				absint(
+					$variation_id
+				)
 			);
 	}
 
@@ -297,21 +366,27 @@ final class TieredPricing {
 		array $tiers
 	): bool {
 
-		$product_id = absint(
-			$product_id
-		);
+		$product_id =
+			absint(
+				$product_id
+			);
 
-		$variation_id = absint(
-			$variation_id
-		);
+		$variation_id =
+			absint(
+				$variation_id
+			);
+
 
 		if ( ! $product_id ) {
 			return false;
 		}
 
-		$clean = $this->normalize_purchase_tiers(
-			$tiers
-		);
+
+		$clean =
+			$this->normalize_purchase_tiers(
+				$tiers
+			);
+
 
 		return $this->repository
 			->replace_purchase(
@@ -345,6 +420,9 @@ final class TieredPricing {
 	 *         'purchase_price' => 4.10,
 	 *     ],
 	 * ]
+	 *
+	 * A tier may contain purchase_price without price. This is important for
+	 * Case 1 because GeneralBuyingPrice is the authoritative cost source.
 	 */
 	public function replace_all(
 		int $product_id,
@@ -353,40 +431,49 @@ final class TieredPricing {
 		bool $update_wc_price = true
 	): bool {
 
-		$product_id = absint(
-			$product_id
-		);
+		$product_id =
+			absint(
+				$product_id
+			);
 
-		$variation_id = absint(
-			$variation_id
-		);
+		$variation_id =
+			absint(
+				$variation_id
+			);
+
 
 		if ( ! $product_id ) {
 			return false;
 		}
 
-		$clean = $this->normalize_combined_tiers(
-			$tiers
-		);
 
-		$result = $this->repository
-			->replace(
-				$product_id,
-				$variation_id,
-				$clean
+		$clean =
+			$this->normalize_combined_tiers(
+				$tiers
 			);
+
+
+		$result =
+			$this->repository
+				->replace(
+					$product_id,
+					$variation_id,
+					$clean
+				);
+
 
 		if (
 			$result
 			&& $update_wc_price
-			&& ! empty( $clean )
 		) {
-			$this->sync_woocommerce_price(
+
+			$this->sync_woocommerce_price_from_tiers(
 				$product_id,
 				$variation_id,
 				$clean
 			);
 		}
+
 
 		do_action(
 			'pdxw_tiers_replaced',
@@ -394,6 +481,7 @@ final class TieredPricing {
 			$variation_id,
 			$clean
 		);
+
 
 		return $result;
 	}
@@ -421,6 +509,10 @@ final class TieredPricing {
 	 *     'RecommendedSellingPrice' => [...],
 	 *     'GeneralBuyingPrice'      => [...],
 	 * ]
+	 *
+	 * Raw Promi prices are stored unchanged.
+	 *
+	 * The storefront price is calculated later using CostCalculator.
 	 */
 	public function sync_promi(
 		int $product_id,
@@ -433,6 +525,7 @@ final class TieredPricing {
 			$this->promi_country_data(
 				$price_data
 			);
+
 
 		if ( empty( $country_data ) ) {
 
@@ -448,15 +541,18 @@ final class TieredPricing {
 			);
 		}
 
+
 		$selling =
 			$country_data[
 				'RecommendedSellingPrice'
 			] ?? [];
 
+
 		$purchase =
 			$country_data[
 				'GeneralBuyingPrice'
 			] ?? [];
+
 
 		$tiers =
 			$this->normalize_promi_prices(
@@ -464,12 +560,15 @@ final class TieredPricing {
 				$purchase
 			);
 
-		$result = $this->replace_all(
-			$product_id,
-			$variation_id,
-			$tiers,
-			$update_wc_price
-		);
+
+		$result =
+			$this->replace_all(
+				$product_id,
+				$variation_id,
+				$tiers,
+				$update_wc_price
+			);
+
 
 		if ( $result ) {
 
@@ -479,6 +578,7 @@ final class TieredPricing {
 				$country_data
 			);
 		}
+
 
 		return $result;
 	}
@@ -499,8 +599,10 @@ final class TieredPricing {
 				$price_data['DEU']
 			)
 		) {
+
 			return $price_data['DEU'];
 		}
+
 
 		if (
 			isset(
@@ -510,6 +612,7 @@ final class TieredPricing {
 				$price_data['EURO']
 			)
 		) {
+
 			return $price_data['EURO'];
 		}
 
@@ -530,8 +633,10 @@ final class TieredPricing {
 				]
 			)
 		) {
+
 			return $price_data;
 		}
+
 
 		return [];
 	}
@@ -541,71 +646,141 @@ final class TieredPricing {
 	 * Match Promi selling and buying tiers by quantity.
 	 *
 	 * Purchasing prices are optional.
+	 *
+	 * Important:
+	 *
+	 * A purchase-only tier is retained.
+	 *
+	 * This is required because Case 1 can work with GeneralBuyingPrice even
+	 * when RecommendedSellingPrice is unavailable.
 	 */
 	private function normalize_promi_prices(
 		mixed $selling,
 		mixed $purchase
 	): array {
 
-		if ( ! is_array( $selling ) ) {
+		$selling_by_quantity =
+			$this->promi_price_map(
+				$selling
+			);
+
+
+		$purchase_by_quantity =
+			$this->promi_price_map(
+				$purchase
+			);
+
+
+		$quantities =
+			array_unique(
+				array_merge(
+					array_keys(
+						$selling_by_quantity
+					),
+					array_keys(
+						$purchase_by_quantity
+					)
+				)
+			);
+
+
+		if ( empty( $quantities ) ) {
 			return [];
 		}
 
-		$purchase_by_quantity = [];
 
-		if ( is_array( $purchase ) ) {
-
-			foreach ( $purchase as $row ) {
-
-				if ( ! is_array( $row ) ) {
-					continue;
-				}
-
-				/*
-				 * Promi can mark pricing as "OnRequest". Such entries do not
-				 * represent a usable numeric tier.
-				 */
-				if (
-					! empty(
-						$row['OnRequest']
-					)
-				) {
-					continue;
-				}
-
-				$quantity = absint(
-					$row['Quantity']
-						?? 0
-				);
-
-				$price = $this->normalize_price(
-					$row['Price']
-						?? null
-				);
-
-				if (
-					! $quantity
-					|| null === $price
-					|| $price <= 0
-				) {
-					continue;
-				}
-
-				$purchase_by_quantity[
-					$quantity
-				] = $price;
-			}
-		}
+		sort(
+			$quantities,
+			SORT_NUMERIC
+		);
 
 
 		$tiers = [];
 
-		foreach ( $selling as $row ) {
+
+		foreach ( $quantities as $quantity ) {
+
+			$quantity =
+				absint(
+					$quantity
+				);
+
+
+			if ( ! $quantity ) {
+				continue;
+			}
+
+
+			$price =
+				$selling_by_quantity[
+					$quantity
+				] ?? null;
+
+
+			$purchase_price =
+				$purchase_by_quantity[
+					$quantity
+				] ?? null;
+
+
+			/*
+			 * At least one usable price source must exist.
+			 */
+			if (
+				null === $price
+				&& null === $purchase_price
+			) {
+				continue;
+			}
+
+
+			$tiers[] = [
+				'qty' =>
+					$quantity,
+
+				'price' =>
+					$price,
+
+				'purchase_price' =>
+					$purchase_price,
+			];
+		}
+
+
+		return $tiers;
+	}
+
+
+	/**
+	 * Convert a Promi price-array structure into:
+	 *
+	 *     quantity => price
+	 */
+	private function promi_price_map(
+		mixed $rows
+	): array {
+
+		if ( ! is_array( $rows ) ) {
+			return [];
+		}
+
+
+		$prices = [];
+
+
+		foreach ( $rows as $row ) {
 
 			if ( ! is_array( $row ) ) {
 				continue;
 			}
 
+
+			/*
+			 * Promi can mark pricing as "OnRequest".
+			 *
+			 * Such a row does not provide a numeric price, so it cannot be
+			 * used as a raw cost source.
+			 */
 			if (
 				! empty(
 					$row['OnRequest']
@@ -614,15 +789,20 @@ final class TieredPricing {
 				continue;
 			}
 
-			$quantity = absint(
-				$row['Quantity']
-					?? 0
-			);
 
-			$price = $this->normalize_price(
-				$row['Price']
-					?? null
-			);
+			$quantity =
+				absint(
+					$row['Quantity']
+						?? 0
+				);
+
+
+			$price =
+				$this->normalize_price(
+					$row['Price']
+						?? null
+				);
+
 
 			if (
 				! $quantity
@@ -632,30 +812,15 @@ final class TieredPricing {
 				continue;
 			}
 
-			$tiers[
+
+			$prices[
 				$quantity
-			] = [
-				'qty' =>
-					$quantity,
-
-				'price' =>
-					$price,
-
-				'purchase_price' =>
-					$purchase_by_quantity[
-						$quantity
-					] ?? null,
-			];
+			] =
+				$price;
 		}
 
-		ksort(
-			$tiers,
-			SORT_NUMERIC
-		);
 
-		return array_values(
-			$tiers
-		);
+		return $prices;
 	}
 
 
@@ -666,7 +831,7 @@ final class TieredPricing {
 	*/
 
 	/**
-	 * Return unique quantities.
+	 * Return unique configured quantities.
 	 *
 	 * variation_id = NULL means all tiers belonging to the parent product
 	 * and its variations.
@@ -678,8 +843,14 @@ final class TieredPricing {
 
 		return $this->repository
 			->get_quantities(
-				$product_id,
-				$variation_id
+				absint(
+					$product_id
+				),
+				null === $variation_id
+					? null
+					: absint(
+						$variation_id
+					)
 			);
 	}
 
@@ -698,16 +869,22 @@ final class TieredPricing {
 				$variation_id
 			);
 
-		foreach ( $quantities as $quantity ) {
 
-			$quantity = absint(
-				$quantity
-			);
+		foreach (
+			$quantities as $quantity
+		) {
+
+			$quantity =
+				absint(
+					$quantity
+				);
+
 
 			if ( $quantity > 1 ) {
 				return $quantity;
 			}
 		}
+
 
 		return null;
 	}
@@ -721,6 +898,14 @@ final class TieredPricing {
 
 	/**
 	 * Normalize combined selling + purchasing tiers.
+	 *
+	 * A combined tier may contain:
+	 *
+	 * - selling price only,
+	 * - purchase price only,
+	 * - both.
+	 *
+	 * At least one usable source is required.
 	 */
 	private function normalize_combined_tiers(
 		array $tiers
@@ -728,22 +913,28 @@ final class TieredPricing {
 
 		$clean = [];
 
+
 		foreach ( $tiers as $tier ) {
 
 			if ( ! is_array( $tier ) ) {
 				continue;
 			}
 
-			$quantity = absint(
-				$tier['qty']
-					?? $tier['quantity']
-					?? 0
-			);
 
-			$price = $this->normalize_price(
-				$tier['price']
-					?? null
-			);
+			$quantity =
+				absint(
+					$tier['qty']
+						?? $tier['quantity']
+						?? 0
+				);
+
+
+			$price =
+				$this->normalize_price(
+					$tier['price']
+						?? null
+				);
+
 
 			$purchase_price =
 				$this->normalize_price(
@@ -751,13 +942,17 @@ final class TieredPricing {
 						?? null
 				);
 
+
 			if (
 				! $quantity
-				|| null === $price
-				|| $price <= 0
+				|| (
+					null === $price
+					&& null === $purchase_price
+				)
 			) {
 				continue;
 			}
+
 
 			$clean[
 				$quantity
@@ -778,10 +973,12 @@ final class TieredPricing {
 			];
 		}
 
+
 		ksort(
 			$clean,
 			SORT_NUMERIC
 		);
+
 
 		return array_values(
 			$clean
@@ -791,6 +988,9 @@ final class TieredPricing {
 
 	/**
 	 * Normalize selling tiers.
+	 *
+	 * Selling price is optional because a purchase-only tier is valid under
+	 * the new Case 1 pricing model.
 	 */
 	private function normalize_selling_tiers(
 		array $tiers
@@ -798,30 +998,46 @@ final class TieredPricing {
 
 		$clean = [];
 
+
 		foreach ( $tiers as $tier ) {
 
 			if ( ! is_array( $tier ) ) {
 				continue;
 			}
 
-			$quantity = absint(
-				$tier['qty']
-					?? $tier['quantity']
-					?? 0
-			);
 
-			$price = $this->normalize_price(
-				$tier['price']
-					?? null
-			);
+			$quantity =
+				absint(
+					$tier['qty']
+						?? $tier['quantity']
+						?? 0
+				);
+
+
+			$price =
+				$this->normalize_price(
+					$tier['price']
+						?? null
+				);
+
+
+			$purchase_price =
+				$this->normalize_price(
+					$tier['purchase_price']
+						?? null
+				);
+
 
 			if (
 				! $quantity
-				|| null === $price
-				|| $price <= 0
+				|| (
+					null === $price
+					&& null === $purchase_price
+				)
 			) {
 				continue;
 			}
+
 
 			$clean[
 				$quantity
@@ -831,13 +1047,23 @@ final class TieredPricing {
 
 				'price' =>
 					$price,
+
+				'purchase_price' =>
+					(
+						null !== $purchase_price
+						&& $purchase_price > 0
+					)
+						? $purchase_price
+						: null,
 			];
 		}
+
 
 		ksort(
 			$clean,
 			SORT_NUMERIC
 		);
+
 
 		return array_values(
 			$clean
@@ -854,7 +1080,10 @@ final class TieredPricing {
 
 		$clean = [];
 
-		foreach ( $tiers as $key => $tier ) {
+
+		foreach (
+			$tiers as $key => $tier
+		) {
 
 			/*
 			 * Accept either:
@@ -871,29 +1100,35 @@ final class TieredPricing {
 			 */
 			if ( is_array( $tier ) ) {
 
-				$quantity = absint(
-					$tier['qty']
-						?? $tier['quantity']
-						?? 0
-				);
+				$quantity =
+					absint(
+						$tier['qty']
+							?? $tier['quantity']
+							?? 0
+					);
 
-				$price = $this->normalize_price(
-					$tier['purchase_price']
-						?? $tier['price']
-						?? null
-				);
+
+				$price =
+					$this->normalize_price(
+						$tier['purchase_price']
+							?? $tier['price']
+							?? null
+					);
 
 			} else {
 
-				$quantity = absint(
-					$key
-				);
+				$quantity =
+					absint(
+						$key
+					);
+
 
 				$price =
 					$this->normalize_price(
 						$tier
 					);
 			}
+
 
 			if (
 				! $quantity
@@ -903,15 +1138,19 @@ final class TieredPricing {
 				continue;
 			}
 
+
 			$clean[
 				$quantity
-			] = $price;
+			] =
+				$price;
 		}
+
 
 		ksort(
 			$clean,
 			SORT_NUMERIC
 		);
+
 
 		return $clean;
 	}
@@ -933,10 +1172,13 @@ final class TieredPricing {
 			return null;
 		}
 
-		$value = wc_format_decimal(
-			$value,
-			4
-		);
+
+		$value =
+			wc_format_decimal(
+				$value,
+				4
+			);
+
 
 		if (
 			'' === $value
@@ -946,6 +1188,7 @@ final class TieredPricing {
 		) {
 			return null;
 		}
+
 
 		return (float) $value;
 	}
@@ -958,14 +1201,28 @@ final class TieredPricing {
 	*/
 
 	/**
-	 * Keep WooCommerce's stored product price aligned with the lowest
-	 * selling tier.
+	 * Synchronize WooCommerce's stored catalog price from the calculated
+	 * article price.
 	 *
-	 * The tier table remains authoritative for quantity-dependent pricing;
-	 * WooCommerce's normal price is primarily useful for catalog display,
-	 * indexing, sorting and fallback behavior.
+	 * This is deliberately NOT based directly on Promi's raw
+	 * RecommendedSellingPrice.
+	 *
+	 * For each raw tier we ask CostCalculator to calculate the actual
+	 * customer price using:
+	 *
+	 *     purchase_price
+	 *         OR
+	 *     RecommendedSellingPrice - manufacturer discount
+	 *
+	 * followed by the applicable category markup.
+	 *
+	 * The lowest calculated customer price is stored as WooCommerce's
+	 * regular/current price.
+	 *
+	 * Quantity-dependent pricing remains authoritative through the Pricing
+	 * Engine at checkout/cart calculation time.
 	 */
-	private function sync_woocommerce_price(
+	private function sync_woocommerce_price_from_tiers(
 		int $product_id,
 		int $variation_id,
 		array $tiers
@@ -975,61 +1232,102 @@ final class TieredPricing {
 			return;
 		}
 
+
 		$prices = [];
+
 
 		foreach ( $tiers as $tier ) {
 
+			$quantity =
+				absint(
+					$tier['qty']
+						?? 0
+				);
+
+
+			if ( ! $quantity ) {
+				continue;
+			}
+
+
+			$result =
+				$this->costs
+					->calculate(
+						$product_id,
+						$variation_id,
+						$quantity
+					);
+
+
+			if (
+				CostCalculator::STATUS_PRICED
+				!== $result['status']
+			) {
+				continue;
+			}
+
+
 			if (
 				isset(
-					$tier['price']
+					$result['article_price']
 				)
 				&& is_numeric(
-					$tier['price']
+					$result['article_price']
 				)
 			) {
+
 				$prices[] =
 					(float)
-						$tier['price'];
+						$result['article_price'];
 			}
 		}
+
 
 		if ( empty( $prices ) ) {
 			return;
 		}
+
 
 		$lowest_price =
 			min(
 				$prices
 			);
 
+
 		$wc_product_id =
 			$variation_id
 				?: $product_id;
+
 
 		$product =
 			wc_get_product(
 				$wc_product_id
 			);
 
+
 		if ( ! $product ) {
 			return;
 		}
 
-		$current_regular =
-			(string)
-				$product
-					->get_regular_price();
-
-		$current_price =
-			(string)
-				$product
-					->get_price();
 
 		$formatted =
 			wc_format_decimal(
 				$lowest_price,
 				wc_get_price_decimals()
 			);
+
+
+		$current_regular =
+			(string)
+				$product
+					->get_regular_price();
+
+
+		$current_price =
+			(string)
+				$product
+					->get_price();
+
 
 		if (
 			$current_regular
@@ -1040,13 +1338,16 @@ final class TieredPricing {
 			return;
 		}
 
+
 		$product->set_regular_price(
 			$formatted
 		);
 
+
 		$product->set_price(
 			$formatted
 		);
+
 
 		$product->save();
 
@@ -1054,13 +1355,14 @@ final class TieredPricing {
 		if ( $variation_id ) {
 
 			/*
-			 * Variation price changes can affect the parent's WooCommerce
-			 * min/max price cache.
+			 * Variation price changes can affect the parent variable
+			 * product's min/max price cache.
 			 */
 			\WC_Product_Variable::sync(
 				$product_id
 			);
 		}
+
 
 		wc_delete_product_transients(
 			$product_id
@@ -1082,42 +1384,51 @@ final class TieredPricing {
 			$variation_id
 				?: $product_id;
 
+
 		$product =
 			wc_get_product(
 				$wc_product_id
 			);
 
+
 		if ( ! $product ) {
 			return;
 		}
 
-		$minimum = max(
-			1,
-			absint(
-				$country_data[
-					'MinimumOrderQuantity'
-				] ?? 1
-			)
-		);
 
-		$increment = max(
-			1,
-			absint(
-				$country_data[
-					'QuantityIncrements'
-				] ?? 1
-			)
-		);
+		$minimum =
+			max(
+				1,
+				absint(
+					$country_data[
+						'MinimumOrderQuantity'
+					] ?? 1
+				)
+			);
+
+
+		$increment =
+			max(
+				1,
+				absint(
+					$country_data[
+						'QuantityIncrements'
+					] ?? 1
+				)
+			);
+
 
 		$product->update_meta_data(
 			'min_order_qty',
 			$minimum
 		);
 
+
 		$product->update_meta_data(
 			'qty_increments',
 			$increment
 		);
+
 
 		$product->save();
 	}

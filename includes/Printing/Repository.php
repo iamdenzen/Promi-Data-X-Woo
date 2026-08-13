@@ -1232,6 +1232,76 @@ final class Repository {
 	}
 
 
+	public function get_applicable_purchase_price_row(
+		int $option_id,
+		int $quantity
+	): ?object {
+
+		$option_id =
+			absint(
+				$option_id
+			);
+
+		$quantity =
+			max(
+				1,
+				absint(
+					$quantity
+				)
+			);
+
+		if ( ! $option_id ) {
+			return null;
+		}
+
+		global $wpdb;
+
+		$table =
+			$this->table(
+				'prices'
+			);
+
+		$row =
+			$wpdb->get_row(
+				$wpdb->prepare(
+					"SELECT
+						id,
+						print_option_id,
+						min_qty,
+						price,
+						purchase_price
+					FROM {$table}
+					WHERE print_option_id = %d
+						AND min_qty <= %d
+					ORDER BY min_qty DESC
+					LIMIT 1",
+					$option_id,
+					$quantity
+				)
+			);
+
+		if ( $row ) {
+			return $row;
+		}
+
+		return $wpdb->get_row(
+			$wpdb->prepare(
+				"SELECT
+					id,
+					print_option_id,
+					min_qty,
+					price,
+					purchase_price
+				FROM {$table}
+				WHERE print_option_id = %d
+				ORDER BY min_qty ASC
+				LIMIT 1",
+				$option_id
+			)
+		);
+	}
+
+
 	public function get_applicable_purchase_price(
 		int $option_id,
 		int $qty

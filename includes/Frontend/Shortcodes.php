@@ -301,6 +301,56 @@ final class Shortcodes {
 				);
 
 
+		/*
+		|--------------------------------------------------------------------------
+		| Price on Request
+		|--------------------------------------------------------------------------
+		|
+		| For variable products: only mark the page as POR when EVERY variation
+		| is POR. If at least one variation has a price the shopper can still
+		| add to cart; per-variation state is handled by JS after selection.
+		|
+		| For simple products: check the single product directly.
+		*/
+
+		$is_price_on_request = false;
+
+		if ( $product instanceof WC_Product_Variable ) {
+
+			$children = $product->get_children();
+
+			if ( ! empty( $children ) ) {
+
+				$all_por = true;
+
+				foreach ( $children as $child_id ) {
+
+					if (
+						! $this->product_data->is_price_on_request(
+							$product_id,
+							absint( $child_id )
+						)
+					) {
+						$all_por = false;
+						break;
+					}
+				}
+
+				$is_price_on_request = $all_por;
+			}
+
+		} else {
+
+			$is_price_on_request =
+				$this->product_data->is_price_on_request(
+					$product_id,
+					0
+				);
+		}
+
+		$context['is_price_on_request'] = $is_price_on_request;
+
+
 		return $this->render_template(
 			'add-to-cart.php',
 			$this->template_context(

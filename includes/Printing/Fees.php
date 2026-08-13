@@ -8,12 +8,29 @@ defined( 'ABSPATH' ) || exit;
  * Print fee service.
  *
  * Responsible for:
- * - Retrieving fees for a print option
- * - Evaluating fee requirements
- * - Calculating selling fees
- * - Calculating purchase fees
+ *
+ * - Retrieving fees for a print option.
+ * - Evaluating fee requirements.
+ * - Calculating selling fees.
+ * - Calculating purchase fees.
+ * - Returning detailed purchase-fee breakdowns for the pricing engine.
  *
  * Storage remains inside Repository.
+ *
+ * Important:
+ *
+ * This class does NOT apply customer markups.
+ *
+ * It returns the raw Promi-side fee amounts. The Printing Calculator then
+ * applies the configured finishing markup and the appropriate rounding rule:
+ *
+ *     setup fee
+ *         → markup
+ *         → nearest whole euro
+ *
+ *     ongoing fee
+ *         → markup
+ *         → no rounding
  */
 final class Fees {
 
@@ -23,9 +40,17 @@ final class Fees {
 	public function __construct(
 		Repository $repository
 	) {
-		$this->repository = $repository;
+
+		$this->repository =
+			$repository;
 	}
 
+
+	/*
+	|--------------------------------------------------------------------------
+	| Retrieval
+	|--------------------------------------------------------------------------
+	*/
 
 	/**
 	 * Get all fees for a print option.
@@ -41,19 +66,21 @@ final class Fees {
 	}
 
 
+	/*
+	|--------------------------------------------------------------------------
+	| Selling Fees
+	|--------------------------------------------------------------------------
+	*/
+
 	/**
-	 * Calculate total selling-side fees for one print option.
+	 * Calculate total Promi selling-side fees for one print option.
 	 *
-	 * Context may contain:
+	 * This method intentionally returns the stored selling-side amount.
 	 *
-	 * [
-	 *     'quantity'        => 100,
-	 *     'colors'          => 2,
-	 *     'positions'       => 1,
-	 *     'product_id'      => 123,
-	 *     'variation_id'    => 456,
-	 *     'print_option_id' => 12,
-	 * ]
+	 * The new customer pricing engine does not use this amount to calculate
+	 * the storefront price. It is retained for compatibility, previews,
+	 * reporting, and any existing consumers that still need Promi's raw
+	 * selling-side value.
 	 */
 	public function calculate(
 		int $option_id,
@@ -68,11 +95,19 @@ final class Fees {
 	}
 
 
+	/*
+	|--------------------------------------------------------------------------
+	| Purchase Fees
+	|--------------------------------------------------------------------------
+	*/
+
 	/**
-	 * Calculate total purchase-side fees.
+	 * Calculate total purchase-side fees for one print option.
 	 *
-	 * If a fee has no purchase_amount, it contributes zero to the purchase
-	 * calculation rather than falling back to its selling amount.
+	 * If a fee has no purchase_amount, it contributes zero.
+	 *
+	 * We deliberately do NOT fall back to the selling amount because the
+	 * new pricing model must be cost-based.
 	 */
 	public function calculate_purchase(
 		int $option_id,
@@ -86,6 +121,171 @@ final class Fees {
 		);
 	}
 
+
+	/**
+	 * Return the detailed purchase-side fee breakdown.
+	 *
+	 * Each returned row contains:
+	 *
+	 * [
+	 *     'type'  => 'setup',
+	 *     'label' => 'Setup',
+	 *     'raw'   => 20.00,
+	 * ]
+	 *
+	 * The type and label come directly from the existing fee data.
+	 *
+	 * No markup or rounding is applied here.
+	 */
+	public function calculate_purchase_breakdown(
+		int $option_id,
+		array $context = []
+	): array {
+
+		$fees =
+			$this->get(
+				$option_id
+			);
+
+
+		if ( empty( $fees ) ) {
+			return [];
+		}
+
+
+		$context =
+			$this->normalize_context(
+				$option_id,
+				$context
+			);
+
+
+		$result = [];
+
+
+		foreach (
+			$fees as $fee
+		) {
+
+			/*
+			|--------------------------------------------------------------------------
+			| Requirements
+			|--------------------------------------------------------------------------
+			*/
+
+			if (
+				! $this->requirements_met(
+					$fee,
+					$context
+				)
+			) {
+				continue;
+			}
+
+
+			/*
+			|--------------------------------------------------------------------------
+			| Purchase Amount
+			|--------------------------------------------------------------------------
+			|
+			| A missing purchase_amount means we do not have a cost basis for
+			| this fee.
+			|
+			| Do NOT use the selling amount as a fallback.
+			*/
+
+			$value =
+				$this->fee_value(
+					$fee,
+					'purchase_amount'
+				);
+
+
+			if ( null === $value ) {
+				continue;
+			}
+
+
+			/*
+			|--------------------------------------------------------------------------
+			| Apply Existing Fee Calculation Rule
+			|--------------------------------------------------------------------------
+			|
+			| For example:
+			|
+			| unique
+			| multiplied by colors
+			| multiplied by quantity
+			| multiplied by positions
+			|
+			| This produces the raw purchase-side fee amount.
+			*/
+
+			$raw =
+				$this->apply_calculation(
+					$value,
+					$fee,
+					$context
+				);
+
+
+			$raw =
+				max(
+					0.0,
+					(float) $raw
+				);
+
+
+			/*
+			|--------------------------------------------------------------------------
+			| Preserve Existing Fee Metadata
+			|--------------------------------------------------------------------------
+			|
+			| The database already has fee_type and fee_label. We don't invent
+			| a new taxonomy here.
+			*/
+
+			$type =
+				trim(
+					(string) (
+						$fee->fee_type
+							?? ''
+					)
+				);
+
+
+			$label =
+				trim(
+					(string) (
+						$fee->fee_label
+							?? ''
+					)
+				);
+
+
+			$result[] = [
+
+				'type' =>
+					$type,
+
+				'label' =>
+					$label,
+
+				'raw' =>
+					$raw,
+			];
+		}
+
+
+		return $result;
+	}
+
+
+	/*
+	|--------------------------------------------------------------------------
+	| Generic Fee Calculation
+	|--------------------------------------------------------------------------
+	*/
 
 	/**
 	 * Calculate one side of the fee structure.
@@ -106,25 +306,36 @@ final class Fees {
 				true
 			)
 		) {
+
 			return 0.0;
 		}
 
-		$fees = $this->get(
-			$option_id
-		);
+
+		$fees =
+			$this->get(
+				$option_id
+			);
+
 
 		if ( empty( $fees ) ) {
 			return 0.0;
 		}
 
-		$context = $this->normalize_context(
-			$option_id,
-			$context
-		);
 
-		$total = 0.0;
+		$context =
+			$this->normalize_context(
+				$option_id,
+				$context
+			);
 
-		foreach ( $fees as $fee ) {
+
+		$total =
+			0.0;
+
+
+		foreach (
+			$fees as $fee
+		) {
 
 			if (
 				! $this->requirements_met(
@@ -135,25 +346,40 @@ final class Fees {
 				continue;
 			}
 
-			$value = $this->fee_value(
-				$fee,
-				$column
-			);
+
+			$value =
+				$this->fee_value(
+					$fee,
+					$column
+				);
+
 
 			if ( null === $value ) {
 				continue;
 			}
 
-			$total += $this->apply_calculation(
-				$value,
-				$fee,
-				$context
-			);
+
+			$total +=
+				$this->apply_calculation(
+					$value,
+					$fee,
+					$context
+				);
 		}
 
-		return $total;
+
+		return max(
+			0.0,
+			$total
+		);
 	}
 
+
+	/*
+	|--------------------------------------------------------------------------
+	| Context
+	|--------------------------------------------------------------------------
+	*/
 
 	/**
 	 * Normalize calculation context.
@@ -164,47 +390,60 @@ final class Fees {
 	): array {
 
 		return [
-			'quantity' => max(
-				1,
+
+			'quantity' =>
+				max(
+					1,
+					absint(
+						$context['quantity']
+							?? 1
+					)
+				),
+
+			'colors' =>
+				max(
+					0,
+					absint(
+						$context['colors']
+							?? 0
+					)
+				),
+
+			'positions' =>
+				max(
+					1,
+					absint(
+						$context['positions']
+							?? 1
+					)
+				),
+
+			'product_id' =>
 				absint(
-					$context['quantity']
-					?? 1
-				)
-			),
+					$context['product_id']
+						?? 0
+				),
 
-			'colors' => max(
-				0,
+			'variation_id' =>
 				absint(
-					$context['colors']
-					?? 0
-				)
-			),
+					$context['variation_id']
+						?? 0
+				),
 
-			'positions' => max(
-				1,
+			'print_option_id' =>
 				absint(
-					$context['positions']
-					?? 1
-				)
-			),
-
-			'product_id' => absint(
-				$context['product_id']
-				?? 0
-			),
-
-			'variation_id' => absint(
-				$context['variation_id']
-				?? 0
-			),
-
-			'print_option_id' => absint(
-				$context['print_option_id']
-				?? $option_id
-			),
+					$context['print_option_id']
+						?? $option_id
+				),
 		];
 	}
 
+
+	/*
+	|--------------------------------------------------------------------------
+	| Fee Values
+	|--------------------------------------------------------------------------
+	*/
 
 	/**
 	 * Extract the requested fee value.
@@ -219,26 +458,41 @@ final class Fees {
 			|| null === $fee->{$column}
 			|| '' === (string) $fee->{$column}
 		) {
+
 			return null;
 		}
 
-		if ( ! is_numeric( $fee->{$column} ) ) {
+
+		if (
+			! is_numeric(
+				$fee->{$column}
+			)
+		) {
+
 			return null;
 		}
 
-		return (float) $fee->{$column};
+
+		return (float)
+			$fee->{$column};
 	}
 
+
+	/*
+	|--------------------------------------------------------------------------
+	| Fee Calculation Rules
+	|--------------------------------------------------------------------------
+	*/
 
 	/**
 	 * Apply the stored fee calculation rule.
 	 *
 	 * Existing data primarily distinguishes:
 	 *
-	 * unique
-	 * multiplied
+	 *     unique
+	 *     multiplied
 	 *
-	 * "multiplied" uses calculation_amount where available.
+	 * "multiplied" uses calculation_amount where appropriate.
 	 */
 	private function apply_calculation(
 		float $amount,
@@ -246,25 +500,35 @@ final class Fees {
 		array $context
 	): float {
 
-		$calculation = strtolower(
-			trim(
-				(string) (
-					$fee->calculation
-					?? 'unique'
+		$calculation =
+			strtolower(
+				trim(
+					(string) (
+						$fee->calculation
+							?? 'unique'
+					)
 				)
-			)
-		);
+			);
 
-		if ( 'multiplied' !== $calculation ) {
+
+		if (
+			'multiplied'
+			!== $calculation
+		) {
+
 			return $amount;
 		}
 
-		$multiplier = $this->multiplier(
-			$fee,
-			$context
-		);
 
-		return $amount * $multiplier;
+		$multiplier =
+			$this->multiplier(
+				$fee,
+				$context
+			);
+
+
+		return $amount
+			* $multiplier;
 	}
 
 
@@ -276,18 +540,21 @@ final class Fees {
 		array $context
 	): float {
 
-		$type = strtolower(
-			trim(
-				(string) (
-					$fee->calculation_type
-					?? ''
+		$type =
+			strtolower(
+				trim(
+					(string) (
+						$fee->calculation_type
+							?? ''
+					)
 				)
-			)
-		);
+			);
 
-		$stored_amount = isset(
-			$fee->calculation_amount
-		)
+
+		$stored_amount =
+			isset(
+				$fee->calculation_amount
+			)
 			&& is_numeric(
 				$fee->calculation_amount
 			)
@@ -308,11 +575,14 @@ final class Fees {
 				'color'
 			)
 		) {
+
 			return max(
 				1,
-				(float) $context['colors']
+				(float)
+					$context['colors']
 			);
 		}
+
 
 		if (
 			str_contains(
@@ -320,11 +590,14 @@ final class Fees {
 				'position'
 			)
 		) {
+
 			return max(
 				1,
-				(float) $context['positions']
+				(float)
+					$context['positions']
 			);
 		}
+
 
 		if (
 			str_contains(
@@ -336,26 +609,38 @@ final class Fees {
 				'qty'
 			)
 		) {
+
 			return max(
 				1,
-				(float) $context['quantity']
+				(float)
+					$context['quantity']
 			);
 		}
 
 
 		/*
 		|--------------------------------------------------------------------------
-		| Stored multiplier
+		| Stored Multiplier
 		|--------------------------------------------------------------------------
 		*/
 
-		if ( $stored_amount > 0 ) {
+		if (
+			$stored_amount > 0
+		) {
+
 			return $stored_amount;
 		}
+
 
 		return 1.0;
 	}
 
+
+	/*
+	|--------------------------------------------------------------------------
+	| Requirements
+	|--------------------------------------------------------------------------
+	*/
 
 	/**
 	 * Check whether a fee applies to the current configuration.
@@ -365,27 +650,38 @@ final class Fees {
 		array $context
 	): bool {
 
-		$raw = $fee->requirement
-			?? null;
+		$raw =
+			$fee->requirement
+				?? null;
+
 
 		if (
 			null === $raw
 			|| '' === $raw
 		) {
+
 			return true;
 		}
 
-		if ( is_string( $raw ) ) {
 
-			$requirement = json_decode(
-				$raw,
-				true
-			);
+		if (
+			is_string(
+				$raw
+			)
+		) {
+
+			$requirement =
+				json_decode(
+					$raw,
+					true
+				);
+
 
 			if (
 				JSON_ERROR_NONE
 				!== json_last_error()
 			) {
+
 				/*
 				 * Invalid historical requirement data should not make the
 				 * entire pricing calculation fail.
@@ -393,18 +689,30 @@ final class Fees {
 				return true;
 			}
 
-		} elseif ( is_array( $raw ) ) {
+		} elseif (
+			is_array(
+				$raw
+			)
+		) {
 
-			$requirement = $raw;
+			$requirement =
+				$raw;
 
 		} else {
 
 			return true;
 		}
 
-		if ( empty( $requirement ) ) {
+
+		if (
+			empty(
+				$requirement
+			)
+		) {
+
 			return true;
 		}
+
 
 		return $this->evaluate_requirement(
 			$requirement,
@@ -417,7 +725,7 @@ final class Fees {
 	 * Evaluate requirement data.
 	 *
 	 * Promi requirement payloads are not consistently shaped, so this
-	 * deliberately supports both associative structures and lists of rules.
+	 * supports both associative structures and lists of rules.
 	 */
 	private function evaluate_requirement(
 		array $requirement,
@@ -425,22 +733,37 @@ final class Fees {
 	): bool {
 
 		/*
-		 * A list of rules means every rule must pass.
-		 */
-		if ( array_is_list( $requirement ) ) {
+		|--------------------------------------------------------------------------
+		| List of rules
+		|--------------------------------------------------------------------------
+		|
+		| A list means every rule must pass.
+		*/
 
-			foreach ( $requirement as $rule ) {
+		if (
+			array_is_list(
+				$requirement
+			)
+		) {
+
+			foreach (
+				$requirement as $rule
+			) {
 
 				if (
-					! is_array( $rule )
+					! is_array(
+						$rule
+					)
 					|| ! $this->evaluate_requirement(
 						$rule,
 						$context
 					)
 				) {
+
 					return false;
 				}
 			}
+
 
 			return true;
 		}
@@ -448,29 +771,35 @@ final class Fees {
 
 		/*
 		|--------------------------------------------------------------------------
-		| Generic field/operator/value structure
+		| Generic field / operator / value
 		|--------------------------------------------------------------------------
 		*/
 
-		$field = sanitize_key(
-			$requirement['field']
-			?? $requirement['Field']
-			?? ''
-		);
-
-		$operator = strtolower(
-			trim(
-				(string) (
-					$requirement['operator']
-					?? $requirement['Operator']
+		$field =
+			sanitize_key(
+				$requirement['field']
+					?? $requirement['Field']
 					?? ''
-				)
-			)
-		);
+			);
 
-		$value = $requirement['value']
-			?? $requirement['Value']
-			?? null;
+
+		$operator =
+			strtolower(
+				trim(
+					(string) (
+						$requirement['operator']
+							?? $requirement['Operator']
+							?? ''
+					)
+				)
+			);
+
+
+		$value =
+			$requirement['value']
+				?? $requirement['Value']
+				?? null;
+
 
 		if (
 			$field
@@ -479,6 +808,7 @@ final class Fees {
 				$context
 			)
 		) {
+
 			return $this->compare(
 				$context[ $field ],
 				$operator,
@@ -494,6 +824,7 @@ final class Fees {
 		*/
 
 		$checks = [
+
 			'min_quantity' => [
 				'quantity',
 				'>=',
@@ -525,7 +856,6 @@ final class Fees {
 			],
 		];
 
-		$matched = false;
 
 		foreach (
 			$checks as $key => [
@@ -543,7 +873,6 @@ final class Fees {
 				continue;
 			}
 
-			$matched = true;
 
 			if (
 				! $this->compare(
@@ -552,9 +881,11 @@ final class Fees {
 					$requirement[ $key ]
 				)
 			) {
+
 				return false;
 			}
 		}
+
 
 		/*
 		 * Unknown requirement structures are treated as applicable rather
@@ -573,62 +904,69 @@ final class Fees {
 		mixed $expected
 	): bool {
 
-		$operator = match ( $operator ) {
+		$operator =
+			match ( $operator ) {
 
-			'=', '==', 'eq' =>
-				'==',
+				'=', '==', 'eq' =>
+					'==',
 
-			'!=', '<>', 'neq' =>
-				'!=',
+				'!=', '<>', 'neq' =>
+					'!=',
 
-			'>', 'gt' =>
-				'>',
+				'>', 'gt' =>
+					'>',
 
-			'>=', 'gte' =>
-				'>=',
+				'>=', 'gte' =>
+					'>=',
 
-			'<', 'lt' =>
-				'<',
+				'<', 'lt' =>
+					'<',
 
-			'<=', 'lte' =>
-				'<=',
+				'<=', 'lte' =>
+					'<=',
 
-			'in' =>
-				'in',
+				'in' =>
+					'in',
 
-			'not_in', 'not-in' =>
-				'not_in',
+				'not_in', 'not-in' =>
+					'not_in',
 
-			default =>
-				'==',
-		};
+				default =>
+					'==',
+			};
 
 
 		return match ( $operator ) {
 
 			'==' =>
 				(string) $actual
-				=== (string) $expected,
+				===
+				(string) $expected,
 
 			'!=' =>
 				(string) $actual
-				!== (string) $expected,
+				!==
+				(string) $expected,
 
 			'>' =>
 				(float) $actual
-				> (float) $expected,
+				>
+				(float) $expected,
 
 			'>=' =>
 				(float) $actual
-				>= (float) $expected,
+				>=
+				(float) $expected,
 
 			'<' =>
 				(float) $actual
-				< (float) $expected,
+				<
+				(float) $expected,
 
 			'<=' =>
 				(float) $actual
-				<= (float) $expected,
+				<=
+				(float) $expected,
 
 			'in' =>
 				in_array(

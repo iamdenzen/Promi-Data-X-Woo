@@ -15,7 +15,7 @@ defined( 'ABSPATH' ) || exit;
  *         ↓
  *     default article markup
  *
- * Printing:
+ * Printing / decoration:
  *
  *     print option
  *         ↓
@@ -23,25 +23,50 @@ defined( 'ABSPATH' ) || exit;
  *         ↓
  *     default finishing markup
  *
- * Manufacturer discount:
+ * Manufacturer discounts are intentionally NOT handled here.
  *
- *     WooCommerce product_brand term meta
+ * Manufacturer discounts are handled by:
+ *
+ *     ManufacturerDiscount
+ *
+ * using the existing WooCommerce `product_brand` taxonomy.
  */
 final class MarkupRules {
 
+	/**
+	 * Default article/category markup.
+	 */
 	public const DEFAULT_ARTICLE_MARKUP =
 		25.0;
 
+	/**
+	 * Default finishing/print-option markup.
+	 */
 	public const DEFAULT_FINISHING_MARKUP =
 		25.0;
 
+	/**
+	 * Manufacturer discount term-meta key.
+	 *
+	 * Kept here as a shared compatibility constant because
+	 * ManufacturerDiscount currently references this constant.
+	 *
+	 * The actual manufacturer-discount logic belongs exclusively to
+	 * ManufacturerDiscount.
+	 */
 	public const MANUFACTURER_DISCOUNT_META =
 		'pdxw_manufacturer_discount';
 
 
+	/**
+	 * Markup rule repository.
+	 */
 	private MarkupRepository $repository;
 
 
+	/**
+	 * Constructor.
+	 */
 	public function __construct(
 		MarkupRepository $repository
 	) {
@@ -56,6 +81,13 @@ final class MarkupRules {
 	|--------------------------------------------------------------------------
 	*/
 
+	/**
+	 * Get the default article/category markup.
+	 *
+	 * Default:
+	 *
+	 *     25%
+	 */
 	public function article_default(): float {
 
 		return max(
@@ -68,6 +100,13 @@ final class MarkupRules {
 	}
 
 
+	/**
+	 * Get the default finishing/print-option markup.
+	 *
+	 * Default:
+	 *
+	 *     25%
+	 */
 	public function finishing_default(): float {
 
 		return max(
@@ -80,6 +119,9 @@ final class MarkupRules {
 	}
 
 
+	/**
+	 * Set the default article/category markup.
+	 */
 	public function set_article_default(
 		float $markup
 	): void {
@@ -95,6 +137,9 @@ final class MarkupRules {
 	}
 
 
+	/**
+	 * Set the default finishing/print-option markup.
+	 */
 	public function set_finishing_default(
 		float $markup
 	): void {
@@ -119,15 +164,21 @@ final class MarkupRules {
 	/**
 	 * Return the applicable article markup for a product.
 	 *
-	 * The deepest matching product_cat rule wins.
+	 * Article markup is configured against the existing WooCommerce
+	 * `product_cat` taxonomy.
+	 *
+	 * The most specific matching category wins.
 	 *
 	 * Example:
 	 *
-	 * Promotional Products 25%
-	 *     USB Sticks 25%
-	 *         Metal USB Sticks 20%
+	 *     Promotional Products     25%
+	 *         USB Sticks           25%
+	 *             Metal USB Sticks 20%
 	 *
-	 * Metal USB Sticks → 20%
+	 * A product in "Metal USB Sticks" receives 20%.
+	 *
+	 * If no category rule exists, the configured default article markup
+	 * is returned.
 	 */
 	public function article_markup(
 		int $product_id
@@ -138,9 +189,11 @@ final class MarkupRules {
 				$product_id
 			);
 
+
 		if ( ! $product_id ) {
 			return $this->article_default();
 		}
+
 
 		$category_ids =
 			wp_get_post_terms(
@@ -151,6 +204,7 @@ final class MarkupRules {
 						'ids',
 				]
 			);
+
 
 		if (
 			is_wp_error(
@@ -163,11 +217,14 @@ final class MarkupRules {
 			return $this->article_default();
 		}
 
+
 		$best_markup =
 			null;
 
+
 		$best_depth =
 			-1;
+
 
 		foreach (
 			$category_ids as $category_id
@@ -178,13 +235,26 @@ final class MarkupRules {
 					$category_id
 				);
 
+
 			if ( ! $category_id ) {
 				continue;
 			}
 
+
+			/*
+			 * Build the category chain starting with the actual product
+			 * category and then walking up through its ancestors.
+			 *
+			 * Example:
+			 *
+			 *     Metal USB Sticks
+			 *     USB Sticks
+			 *     Promotional Products
+			 */
 			$chain = [
 				$category_id,
 			];
+
 
 			$ancestors =
 				get_ancestors(
@@ -192,18 +262,44 @@ final class MarkupRules {
 					'product_cat'
 				);
 
+
 			foreach (
 				$ancestors as $ancestor
 			) {
-				$chain[] =
+
+				$ancestor =
 					absint(
 						$ancestor
 					);
+
+
+				if ( ! $ancestor ) {
+					continue;
+				}
+
+
+				$chain[] =
+					$ancestor;
 			}
 
+
+			/*
+			 * Look for the most specific configured rule in this chain.
+			 */
 			foreach (
 				$chain as $depth => $term_id
 			) {
+
+				$term_id =
+					absint(
+						$term_id
+					);
+
+
+				if ( ! $term_id ) {
+					continue;
+				}
+
 
 				$markup =
 					$this->repository
@@ -212,16 +308,27 @@ final class MarkupRules {
 							$term_id
 						);
 
-				if ( null === $markup ) {
+
+				if (
+					null === $markup
+				) {
 					continue;
 				}
 
+
 				/*
-				 * A smaller chain index means the exact child category.
+				 * The first item in the chain is the most specific
+				 * category.
+				 *
+				 * Therefore:
+				 *
+				 *     child category = greater depth
+				 *     parent category = lower depth
 				 */
 				$actual_depth =
 					count( $chain )
 					- $depth;
+
 
 				if (
 					$actual_depth
@@ -231,11 +338,13 @@ final class MarkupRules {
 					$best_depth =
 						$actual_depth;
 
+
 					$best_markup =
-						$markup;
+						(float) $markup;
 				}
 			}
 		}
+
 
 		return null !== $best_markup
 			? $best_markup
@@ -245,104 +354,61 @@ final class MarkupRules {
 
 	/*
 	|--------------------------------------------------------------------------
-	| Finishing / Print Option
+	| Finishing / Print Option Markup
 	|--------------------------------------------------------------------------
 	*/
 
+	/**
+	 * Return the applicable finishing/decoration markup.
+	 *
+	 * The client's terminology may refer to this as a "finishing type",
+	 * but in our implementation the existing print-option entity is used.
+	 *
+	 * There is intentionally no separate finishing-type taxonomy.
+	 *
+	 * If no specific print-option rule exists, the default finishing markup
+	 * is returned.
+	 */
 	public function finishing_markup(
 		int $print_option_id
 	): float {
+
+		$print_option_id =
+			absint(
+				$print_option_id
+			);
+
+
+		if ( ! $print_option_id ) {
+			return $this->finishing_default();
+		}
+
 
 		$markup =
 			$this->repository
 				->get(
 					MarkupRepository::TYPE_PRINT_OPTION,
-					absint(
-						$print_option_id
-					)
+					$print_option_id
 				);
 
+
 		return null !== $markup
-			? $markup
+			? (float) $markup
 			: $this->finishing_default();
 	}
 
 
 	/*
 	|--------------------------------------------------------------------------
-	| Manufacturer
+	| Repository
 	|--------------------------------------------------------------------------
 	*/
 
 	/**
-	 * Return manufacturer discount for a WooCommerce product.
+	 * Return the underlying markup repository.
 	 *
-	 * Brand is the existing product_brand taxonomy.
+	 * Useful for admin/API layers that need to persist individual rules.
 	 */
-	public function manufacturer_discount(
-		int $product_id
-	): float {
-
-		$product_id =
-			absint(
-				$product_id
-			);
-
-		if ( ! $product_id ) {
-			return 0.0;
-		}
-
-		$terms =
-			wp_get_post_terms(
-				$product_id,
-				'product_brand',
-				[
-					'number' =>
-						1,
-				]
-			);
-
-		if (
-			is_wp_error( $terms )
-			|| empty( $terms )
-		) {
-			return 0.0;
-		}
-
-		$term =
-			reset(
-				$terms
-			);
-
-		if (
-			! $term instanceof \WP_Term
-		) {
-			return 0.0;
-		}
-
-		$value =
-			get_term_meta(
-				$term->term_id,
-				self::MANUFACTURER_DISCOUNT_META,
-				true
-			);
-
-		if (
-			! is_numeric( $value )
-		) {
-			return 0.0;
-		}
-
-		return min(
-			100.0,
-			max(
-				0.0,
-				(float) $value
-			)
-		);
-	}
-
-
 	public function repository(): MarkupRepository {
 
 		return $this->repository;

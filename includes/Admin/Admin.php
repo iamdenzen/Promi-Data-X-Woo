@@ -65,6 +65,8 @@ final class Admin {
 
 	private PrintingPage $printing_page;
 
+	private MarkupPage $markup_page;
+
 
 	private bool $initialized = false;
 
@@ -159,6 +161,18 @@ final class Admin {
 
 		/*
 		|--------------------------------------------------------------------------
+		| Markup Admin
+		|--------------------------------------------------------------------------
+		*/
+
+		$this->markup_page =
+			new MarkupPage(
+				$this->pricing
+			);
+
+
+		/*
+		|--------------------------------------------------------------------------
 		| Admin Navigation
 		|--------------------------------------------------------------------------
 		|
@@ -175,7 +189,8 @@ final class Admin {
 			new Menu(
 				$this->promi_pages,
 				$this->pricing_page,
-				$this->printing_page
+				$this->printing_page,
+				$this->markup_page
 			);
 
 
@@ -334,6 +349,8 @@ final class Admin {
 		$this->pricing_page->init();
 
 		$this->printing_page->init();
+
+		$this->markup_page->init();
 
 
 		do_action(

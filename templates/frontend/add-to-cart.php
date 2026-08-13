@@ -99,13 +99,18 @@ if (
 		);
 }
 
+$is_price_on_request =
+	isset( $is_price_on_request )
+	&& (bool) $is_price_on_request;
+
 ?>
 
 <form
-	class="cx-addtocart-form"
+	class="cx-addtocart-form<?php echo $is_price_on_request ? ' cx-por-active' : ''; ?>"
 	method="post"
 	enctype="multipart/form-data"
 	id="cxatc-form"
+	data-price-on-request="<?php echo $is_price_on_request ? '1' : '0'; ?>"
 >
 
 	<div class="cx-wrapper">
@@ -407,6 +412,14 @@ if (
 				</div>
 
 
+				<?php if ( $is_price_on_request ) : ?>
+
+				<div class="cx-product-main-price cx-por-price">
+					<b><?php echo esc_html__( 'Preis auf Anfrage', 'promi-data-x-woo' ); ?></b>
+				</div>
+
+				<?php else : ?>
+
 				<div class="cx-product-main-price">
 
 					<small>
@@ -427,6 +440,8 @@ if (
 					</b>
 
 				</div>
+
+				<?php endif; ?>
 
 			</div>
 
@@ -624,7 +639,7 @@ if (
 
 					<a
 						href="#individuelle-anfrage-senden"
-						class="cx-trigger-popup cx-offer-btn cx-icon-btn alt"
+						class="cx-trigger-popup cx-offer-btn cx-icon-btn<?php echo $is_price_on_request ? '' : ' alt'; ?>"
 					>
 						<img
 							src="/wp-content/uploads/2026/04/inquiry-icon.webp"
@@ -677,9 +692,10 @@ if (
 
 					<button
 						type="submit"
-						class="single_add_to_cart_button cx-icon-btn"
+						class="single_add_to_cart_button cx-icon-btn cx-cart-btn"
 						data-font="ETmodules"
 						data-icon=""
+						<?php echo $is_price_on_request ? 'style="display:none;"' : ''; ?>
 					>
 						<?php
 						echo esc_html__(
@@ -689,6 +705,10 @@ if (
 						?>
 					</button>
 
+
+					<div class="cx-por-notice" style="<?php echo $is_price_on_request ? '' : 'display:none;'; ?>">
+						<?php echo esc_html__( 'Für dieses Produkt erhalten Sie auf Anfrage ein individuelles Angebot.', 'promi-data-x-woo' ); ?>
+					</div>
 
 					<div class="cxatc-error cxatc-sample-error">
 						<?php

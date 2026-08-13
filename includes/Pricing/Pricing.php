@@ -13,12 +13,37 @@ defined( 'ABSPATH' ) || exit;
  * Coordinates:
  *
  * - Unified price calculation pipeline.
- * - Product/variation tier pricing.
- * - Selling and purchase prices.
+ * - Product / variation tier pricing.
+ * - Article cost resolution.
+ * - Category-based article markup.
+ * - Manufacturer discounts.
+ * - Finishing / decoration markup support.
  * - WooCommerce cart price application.
  * - Promi tier synchronization.
  *
  * Printing registers itself with the Engine separately at priority 20.
+ *
+ * Service dependency order:
+ *
+ *     PriceRepository
+ *          ↓
+ *     MarkupRepository
+ *          ↓
+ *     MarkupRules
+ *
+ *     ManufacturerDiscount
+ *
+ *     SellingPriceCalculator
+ *          ↓
+ *     CostCalculator
+ *          ↓
+ *     TieredPricing
+ *          ↓
+ *     Engine
+ *          ↓
+ *     CartPricing
+ *          ↓
+ *     RestController
  */
 final class Pricing {
 
@@ -34,101 +59,151 @@ final class Pricing {
 
 	private MarkupRules $markup_rules;
 
+	private ManufacturerDiscount $manufacturer_discount;
+
+	private SellingPriceCalculator $selling_prices;
+
 	private CostCalculator $costs;
 
 	private TieredPricing $tiers;
 
 	private CartPricing $cart;
 
+	private RestController $rest;
+
 	private bool $initialized = false;
 
 
+	/**
+	 * Constructor.
+	 */
 	public function __construct(
 		Plugin $plugin,
 		Catalog $catalog
 	) {
-		$this->plugin  = $plugin;
-		$this->catalog = $catalog;
+
+		$this->plugin =
+			$plugin;
+
+		$this->catalog =
+			$catalog;
 
 		$this->register_services();
 	}
 
 
 	/**
-	 * Build the pricing service graph.
+	 * Build the complete pricing service graph.
+	 *
+	 * Every service is constructed exactly once and only after all of its
+	 * dependencies have been constructed.
 	 */
 	private function register_services(): void {
 
 		/*
 		|--------------------------------------------------------------------------
-		| Calculation Engine
+		| Raw Price Storage
 		|--------------------------------------------------------------------------
-		*/
-
-		$this->engine =
-			new Engine();
-
-
-		/*
-		|--------------------------------------------------------------------------
-		| WooCommerce Cart Integration
-		|--------------------------------------------------------------------------
-		*/
-
-		$this->cart =
-			new CartPricing(
-				$this->engine,
-				$this->tiers
-			);
-
-		/*
-		|--------------------------------------------------------------------------
-		| Storage
-		|--------------------------------------------------------------------------
+		|
+		| PriceRepository is responsible for Promi tier data and database
+		| access. It does not calculate customer markups.
 		*/
 
 		$this->repository =
 			new PriceRepository();
 
-		/*
-		|--------------------------------------------------------------------------
-		| Pricing Engine
-		|--------------------------------------------------------------------------
-		*/
-
-		$this->engine =
-			new Engine();
 
 		/*
 		|--------------------------------------------------------------------------
-		| Markup Repository and Rules
+		| Markup Rules Storage
 		|--------------------------------------------------------------------------
 		*/
 
 		$this->markup_repository =
 			new MarkupRepository();
 
+
+		/*
+		|--------------------------------------------------------------------------
+		| Markup Business Rules
+		|--------------------------------------------------------------------------
+		|
+		| Handles:
+		|
+		| - article/category markup,
+		| - finishing/print-option markup,
+		| - default markup values.
+		|
+		| Manufacturer discounts intentionally live in their own service.
+		*/
+
 		$this->markup_rules =
 			new MarkupRules(
 				$this->markup_repository
 			);
 
+
+		/*
+		|--------------------------------------------------------------------------
+		| Manufacturer Discount
+		|--------------------------------------------------------------------------
+		|
+		| Uses the existing WooCommerce product_brand taxonomy and the shared
+		| manufacturer-discount meta key.
+		*/
+
+		$this->manufacturer_discount =
+			new ManufacturerDiscount();
+
+
+		/*
+		|--------------------------------------------------------------------------
+		| Selling Price Mathematics
+		|--------------------------------------------------------------------------
+		|
+		| Contains only the mathematical markup/rounding rules.
+		*/
+
+		$this->selling_prices =
+			new SellingPriceCalculator();
+
+
 		/*
 		|--------------------------------------------------------------------------
 		| Cost Calculator
 		|--------------------------------------------------------------------------
+		|
+		| Resolves:
+		|
+		| Case 1:
+		|     purchase_price
+		|
+		| Case 2:
+		|     RecommendedSellingPrice
+		|     → manufacturer discount
+		|
+		| Case 3:
+		|     price on request
+		|
+		| Then delegates the actual article markup mathematics to
+		| SellingPriceCalculator.
 		*/
 
 		$this->costs =
 			new CostCalculator(
 				$this->repository,
-				$this->markup_rules
+				$this->markup_rules,
+				$this->manufacturer_discount,
+				$this->selling_prices
 			);
-		
+
+
 		/*
 		|--------------------------------------------------------------------------
 		| Tier Pricing
 		|--------------------------------------------------------------------------
+		|
+		| Connects quantity-tier resolution with the new cost/markup system.
 		*/
 
 		$this->tiers =
@@ -137,17 +212,50 @@ final class Pricing {
 				$this->costs
 			);
 
+
 		/*
 		|--------------------------------------------------------------------------
-		| Cart Pricing
+		| Unified Calculation Engine
 		|--------------------------------------------------------------------------
+		|
+		| The Engine is the central orchestrator.
+		|
+		| TieredPricing registers at priority 10.
+		| Printing registers separately at priority 20.
 		*/
+
+		$this->engine =
+			new Engine();
+
+
+		/*
+		|--------------------------------------------------------------------------
+		| WooCommerce Cart Pricing
+		|--------------------------------------------------------------------------
+		|
+		| CartPricing depends on the already-built Engine and TieredPricing
+		| service.
+		*/
+
 		$this->cart =
 			new CartPricing(
 				$this->engine,
 				$this->tiers
 			);
 
+
+		/*
+		|--------------------------------------------------------------------------
+		| REST Controller
+		|--------------------------------------------------------------------------
+		|
+		| REST endpoints can access the Pricing module through this object.
+		*/
+
+		$this->rest =
+			new RestController(
+				$this
+			);
 	}
 
 
@@ -160,6 +268,7 @@ final class Pricing {
 			return;
 		}
 
+
 		$this->initialized = true;
 
 
@@ -168,9 +277,9 @@ final class Pricing {
 		| Tier Pricing
 		|--------------------------------------------------------------------------
 		|
-		| The existing CX pricing engine applies tier pricing first.
+		| Article/tier pricing executes first.
 		|
-		| Printing is registered later by Printing::init() at priority 20.
+		| Printing registers itself later at priority 20.
 		*/
 
 		$this->engine->register(
@@ -190,6 +299,15 @@ final class Pricing {
 		*/
 
 		$this->cart->init();
+
+
+		/*
+		|--------------------------------------------------------------------------
+		| REST Controller
+		|--------------------------------------------------------------------------
+		*/
+
+		$this->rest->init();
 
 
 		/*
@@ -258,8 +376,8 @@ final class Pricing {
 	/**
 	 * Synchronize tier prices directly from Promi country-price data.
 	 *
-	 * This lets ProductSync pass the Promi price payload into Pricing rather
-	 * than knowing how tier rows are stored or paired.
+	 * ProductSync can pass the Promi payload here without needing to know
+	 * how the pricing rows are stored or paired.
 	 */
 	public function sync_promi(
 		int $product_id,
@@ -285,7 +403,11 @@ final class Pricing {
 	*/
 
 	/**
-	 * Return the applicable selling price for a quantity.
+	 * Return the calculated customer selling price for a quantity.
+	 *
+	 * This is NOT the raw Promi RecommendedSellingPrice.
+	 *
+	 * Returns null when the product is Price on request.
 	 */
 	public function selling_price(
 		int $product_id,
@@ -303,7 +425,7 @@ final class Pricing {
 
 
 	/**
-	 * Return all selling tiers.
+	 * Return all raw selling tiers.
 	 */
 	public function selling_tiers(
 		int $product_id,
@@ -325,7 +447,9 @@ final class Pricing {
 	*/
 
 	/**
-	 * Return the applicable purchase price for a quantity.
+	 * Return the raw applicable purchase price for a quantity.
+	 *
+	 * This is the GeneralBuyingPrice / purchase_price source.
 	 */
 	public function purchase_price(
 		int $product_id,
@@ -343,7 +467,7 @@ final class Pricing {
 
 
 	/**
-	 * Return all purchasing tiers.
+	 * Return all raw purchasing tiers.
 	 */
 	public function purchase_tiers(
 		int $product_id,
@@ -383,8 +507,7 @@ final class Pricing {
 	/**
 	 * Return the first tier quantity greater than one.
 	 *
-	 * This reproduces the existing CX Tiered Pricing concept of
-	 * "lowest tier quantity".
+	 * This preserves the existing CX Tiered Pricing behavior.
 	 */
 	public function lowest_tier_quantity(
 		int $product_id,
@@ -418,6 +541,7 @@ final class Pricing {
 				$post_id
 			);
 
+
 		if ( 'product' === $post_type ) {
 
 			$this->repository
@@ -427,6 +551,7 @@ final class Pricing {
 
 			return;
 		}
+
 
 		if (
 			'product_variation'
@@ -447,37 +572,83 @@ final class Pricing {
 	|--------------------------------------------------------------------------
 	*/
 
+	/**
+	 * Return the unified pricing engine.
+	 */
 	public function engine(): Engine {
+
 		return $this->engine;
 	}
 
 
+	/**
+	 * Return the raw price repository.
+	 */
 	public function repository(): PriceRepository {
+
 		return $this->repository;
 	}
 
 
+	/**
+	 * Return markup business rules.
+	 */
 	public function markup_rules(): MarkupRules {
+
 		return $this->markup_rules;
 	}
 
 
+	/**
+	 * Return markup repository.
+	 */
 	public function markup_repository(): MarkupRepository {
+
 		return $this->markup_repository;
 	}
 
 
+	/**
+	 * Return manufacturer discount service.
+	 */
+	public function manufacturer_discount(): ManufacturerDiscount {
+
+		return $this->manufacturer_discount;
+	}
+
+
+	/**
+	 * Return selling-price mathematics service.
+	 */
+	public function selling_prices(): SellingPriceCalculator {
+
+		return $this->selling_prices;
+	}
+
+
+	/**
+	 * Return article cost calculator.
+	 */
 	public function costs(): CostCalculator {
+
 		return $this->costs;
 	}
 
 
+	/**
+	 * Return tier-pricing service.
+	 */
 	public function tiers(): TieredPricing {
+
 		return $this->tiers;
 	}
 
 
+	/**
+	 * Return cart-pricing service.
+	 */
 	public function cart(): CartPricing {
+
 		return $this->cart;
 	}
 
@@ -488,12 +659,20 @@ final class Pricing {
 	|--------------------------------------------------------------------------
 	*/
 
+	/**
+	 * Return Catalog module.
+	 */
 	public function catalog(): Catalog {
+
 		return $this->catalog;
 	}
 
 
+	/**
+	 * Return root Plugin container.
+	 */
 	public function plugin(): Plugin {
+
 		return $this->plugin;
 	}
 
@@ -504,7 +683,11 @@ final class Pricing {
 	|--------------------------------------------------------------------------
 	*/
 
+	/**
+	 * Determine whether Pricing has been initialized.
+	 */
 	public function is_initialized(): bool {
+
 		return $this->initialized;
 	}
 }

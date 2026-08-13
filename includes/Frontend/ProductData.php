@@ -3,6 +3,7 @@
 namespace PromiDataXWoo\Frontend;
 
 use PromiDataXWoo\Catalog\Catalog;
+use PromiDataXWoo\Pricing\CostCalculator;
 use PromiDataXWoo\Pricing\Pricing;
 use PromiDataXWoo\Printing\Printing;
 use WC_Product;
@@ -207,6 +208,12 @@ final class ProductData {
 			'qty_increments' =>
 				$this->quantity_increment(
 					$target
+				),
+
+			'price_on_request' =>
+				$this->is_price_on_request(
+					$product_id,
+					$variation_id
 				),
 		];
 	}
@@ -969,6 +976,28 @@ final class ProductData {
 				$product_id,
 				$variation_id
 			);
+	}
+
+
+	/**
+	 * Whether a product/variation has no calculable price (Case 3).
+	 */
+	public function is_price_on_request(
+		int $product_id,
+		int $variation_id = 0
+	): bool {
+
+		$result =
+			$this->pricing
+				->tiers()
+				->article_price(
+					$product_id,
+					$variation_id,
+					1
+				);
+
+		return CostCalculator::STATUS_PRICE_ON_REQUEST
+			=== ( $result['status'] ?? '' );
 	}
 
 

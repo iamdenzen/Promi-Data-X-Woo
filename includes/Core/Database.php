@@ -631,6 +631,7 @@ final class Database {
 			'print_prices',
 			'print_fees',
 			'print_relation',
+			'pricing_markup_rules',
 		];
 	}
 }

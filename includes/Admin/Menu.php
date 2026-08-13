@@ -56,6 +56,9 @@ final class Menu {
 	public const PRINTING_SLUG =
 		'pdxw-printing';
 
+	public const MARKUP_SLUG =
+		'pdxw-pricing-markups';
+
 
 	/*
 	|--------------------------------------------------------------------------
@@ -84,6 +87,8 @@ final class Menu {
 
 	private PrintingPage $printing_page;
 
+	private MarkupPage $markup_page;
+
 	private bool $initialized = false;
 
 	/**
@@ -99,11 +104,13 @@ final class Menu {
 	public function __construct(
 		PromiPages $promi_pages,
 		PricingPage $pricing_page,
-		PrintingPage $printing_page
+		PrintingPage $printing_page,
+		MarkupPage $markup_page
 	) {
 		$this->promi_pages   = $promi_pages;
 		$this->pricing_page  = $pricing_page;
 		$this->printing_page = $printing_page;
+		$this->markup_page   = $markup_page;
 	}
 
 
@@ -385,6 +392,33 @@ final class Menu {
 			);
 
 
+		/*
+		|--------------------------------------------------------------------------
+		| Markups
+		|--------------------------------------------------------------------------
+		*/
+		$this->page_hooks[
+			self::MARKUP_SLUG
+		] =
+			add_submenu_page(
+				self::ROOT_SLUG,
+				__(
+					'Pricing Markups',
+					'promi-data-x-woo'
+				),
+				__(
+					'Pricing Markups',
+					'promi-data-x-woo'
+				),
+				self::CAPABILITY,
+				self::MARKUP_SLUG,
+				[
+					$this->markup_page,
+					'render',
+				]
+			);
+
+
 		do_action(
 			'pdxw_admin_menu_registered',
 			$this,
@@ -471,6 +505,7 @@ final class Menu {
 			self::IGNORE_RULES_SLUG,
 			self::PRICING_SLUG,
 			self::PRINTING_SLUG,
+			self::MARKUP_SLUG,
 		];
 	}
 
