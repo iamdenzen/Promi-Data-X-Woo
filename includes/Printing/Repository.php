@@ -1307,10 +1307,21 @@ final class Repository {
 		int $qty
 	): ?float {
 
+		$purchase_price =
+			$this->get_applicable_price(
+				$option_id,
+				$qty,
+				'purchase_price'
+			);
+
+		if ( null !== $purchase_price ) {
+			return $purchase_price;
+		}
+
 		return $this->get_applicable_price(
 			$option_id,
 			$qty,
-			'purchase_price'
+			'price'
 		);
 	}
 

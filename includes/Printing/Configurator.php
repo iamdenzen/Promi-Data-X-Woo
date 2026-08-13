@@ -506,16 +506,34 @@ final class Configurator {
 
 		foreach ( $prices as $price ) {
 
-			$result[] = [
-				'quantity' =>
+			$quantity =
+				max(
+					1,
 					(int)
 						$price
-							->min_qty,
+							->min_qty
+				);
+
+			$processed =
+				$this->calculator
+					->calculate_selection(
+						(int) (
+							$price
+								->print_option_id
+								?? 0
+						),
+						$quantity
+					);
+
+			$result[] = [
+				'quantity' =>
+					$quantity,
 
 				'price' =>
-					(float)
-						$price
-							->price,
+					(float) (
+						$processed['unit_price']
+							?? 0.0
+					),
 			];
 		}
 

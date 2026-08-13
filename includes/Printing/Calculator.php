@@ -712,10 +712,17 @@ final class Calculator {
 			|--------------------------------------------------------------------------
 			*/
 
-			$markup =
+			$price_markup =
 				$this->pricing
 					->markup_rules()
-					->finishing_markup(
+					->print_price_markup(
+						$option_id
+					);
+
+			$fee_markup =
+				$this->pricing
+					->markup_rules()
+					->print_fee_markup(
 						$option_id
 					);
 
@@ -765,9 +772,8 @@ final class Calculator {
 					$this->selling_prices
 						->ongoing(
 							$purchase_price,
-							$markup
+							$price_markup
 						);
-
 
 				$customer_unit_price =
 					max(
@@ -871,17 +877,14 @@ final class Calculator {
 						$this->selling_prices
 							->setup(
 								$raw,
-								$markup
+								$fee_markup
 							);
-
 
 					$selling_fee =
 						max(
 							0.0,
-							(float)
-								$selling_fee
+							(float) $selling_fee
 						);
-
 
 					$setup_total +=
 						$selling_fee;
@@ -891,7 +894,6 @@ final class Calculator {
 					/*
 					|--------------------------------------------------------------------------
 					| Ongoing / other fee
-					|--------------------------------------------------------------------------
 					|
 					| Apply finishing markup.
 					|
@@ -902,15 +904,13 @@ final class Calculator {
 						$this->selling_prices
 							->ongoing(
 								$raw,
-								$markup
+								$fee_markup
 							);
-
 
 					$selling_fee =
 						max(
 							0.0,
-							(float)
-								$selling_fee
+							(float) $selling_fee
 						);
 
 
@@ -931,7 +931,7 @@ final class Calculator {
 						(float) $raw,
 
 					'markup' =>
-						(float) $markup,
+						(float) $fee_markup,
 
 					'selling' =>
 						(float) $selling_fee,
@@ -1059,10 +1059,17 @@ final class Calculator {
 		}
 
 
-		$markup =
+		$price_markup =
 			$this->pricing
 				->markup_rules()
-				->finishing_markup(
+				->print_price_markup(
+					$option_id
+				);
+
+		$fee_markup =
+			$this->pricing
+				->markup_rules()
+				->print_fee_markup(
 					$option_id
 				);
 
@@ -1098,7 +1105,7 @@ final class Calculator {
 					->ongoing(
 						(float)
 							$purchase_price,
-						$markup
+						$price_markup
 					);
 		}
 
@@ -1199,7 +1206,7 @@ final class Calculator {
 					$this->selling_prices
 						->setup(
 							$raw,
-							$markup
+							$fee_markup
 						);
 
 			} else {
@@ -1208,7 +1215,7 @@ final class Calculator {
 					$this->selling_prices
 						->ongoing(
 							$raw,
-							$markup
+							$fee_markup
 						);
 			}
 		}

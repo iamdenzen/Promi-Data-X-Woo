@@ -21,6 +21,12 @@ final class MarkupRepository {
 	public const TYPE_PRINT_OPTION =
 		'print_option';
 
+	public const TYPE_PRINT_OPTION_PRICE =
+		'print_option_price';
+
+	public const TYPE_PRINT_OPTION_FEE =
+		'print_option_fee';
+
 
 	public function get(
 		string $type,
@@ -267,6 +273,8 @@ final class MarkupRepository {
 			[
 				self::TYPE_CATEGORY,
 				self::TYPE_PRINT_OPTION,
+				self::TYPE_PRINT_OPTION_PRICE,
+				self::TYPE_PRINT_OPTION_FEE,
 			],
 			true
 		)

@@ -45,6 +45,12 @@ final class MarkupRules {
 	public const DEFAULT_FINISHING_MARKUP =
 		25.0;
 
+	public const DEFAULT_PRINT_PRICE_MARKUP =
+		25.0;
+
+	public const DEFAULT_PRINT_FEE_MARKUP =
+		25.0;
+
 	/**
 	 * Manufacturer discount term-meta key.
 	 *
@@ -118,6 +124,34 @@ final class MarkupRules {
 		);
 	}
 
+	/**
+	 * Default print option price markup.
+	 */
+	public function print_price_default(): float {
+
+		return max(
+			0.0,
+			(float) get_option(
+				'pdxw_default_print_price_markup',
+				self::DEFAULT_PRINT_PRICE_MARKUP
+			)
+		);
+	}
+
+	/**
+	 * Default print option fee/setup markup.
+	 */
+	public function print_fee_default(): float {
+
+		return max(
+			0.0,
+			(float) get_option(
+				'pdxw_default_print_fee_markup',
+				self::DEFAULT_PRINT_FEE_MARKUP
+			)
+		);
+	}
+
 
 	/**
 	 * Set the default article/category markup.
@@ -146,6 +180,34 @@ final class MarkupRules {
 
 		update_option(
 			'pdxw_default_finishing_markup',
+			max(
+				0.0,
+				$markup
+			),
+			false
+		);
+	}
+
+	public function set_print_price_default(
+		float $markup
+	): void {
+
+		update_option(
+			'pdxw_default_print_price_markup',
+			max(
+				0.0,
+				$markup
+			),
+			false
+		);
+	}
+
+	public function set_print_fee_default(
+		float $markup
+	): void {
+
+		update_option(
+			'pdxw_default_print_fee_markup',
 			max(
 				0.0,
 				$markup
@@ -373,28 +435,87 @@ final class MarkupRules {
 		int $print_option_id
 	): float {
 
+		return $this->print_price_markup(
+			$print_option_id
+		);
+	}
+
+	/**
+	 * Return the print-price markup for a single print option.
+	 */
+	public function print_price_markup(
+		int $print_option_id
+	): float {
+
 		$print_option_id =
 			absint(
 				$print_option_id
 			);
 
-
 		if ( ! $print_option_id ) {
-			return $this->finishing_default();
+			return $this->print_price_default();
 		}
 
-
 		$markup =
+			$this->repository
+				->get(
+					MarkupRepository::TYPE_PRINT_OPTION_PRICE,
+					$print_option_id
+				);
+
+		if ( null !== $markup ) {
+			return (float) $markup;
+		}
+
+		$legacy =
 			$this->repository
 				->get(
 					MarkupRepository::TYPE_PRINT_OPTION,
 					$print_option_id
 				);
 
+		return null !== $legacy
+			? (float) $legacy
+			: $this->print_price_default();
+	}
 
-		return null !== $markup
-			? (float) $markup
-			: $this->finishing_default();
+	/**
+	 * Return the setup/fee markup for a single print option.
+	 */
+	public function print_fee_markup(
+		int $print_option_id
+	): float {
+
+		$print_option_id =
+			absint(
+				$print_option_id
+			);
+
+		if ( ! $print_option_id ) {
+			return $this->print_fee_default();
+		}
+
+		$markup =
+			$this->repository
+				->get(
+					MarkupRepository::TYPE_PRINT_OPTION_FEE,
+					$print_option_id
+				);
+
+		if ( null !== $markup ) {
+			return (float) $markup;
+		}
+
+		$legacy =
+			$this->repository
+				->get(
+					MarkupRepository::TYPE_PRINT_OPTION,
+					$print_option_id
+				);
+
+		return null !== $legacy
+			? (float) $legacy
+			: $this->print_fee_default();
 	}
 
 

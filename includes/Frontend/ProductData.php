@@ -971,11 +971,62 @@ final class ProductData {
 		int $variation_id = 0
 	): array {
 
-		return $this->pricing
-			->selling_tiers(
-				$product_id,
-				$variation_id
-			);
+		$raw_tiers =
+			$this->pricing
+				->selling_tiers(
+					$product_id,
+					$variation_id
+				);
+
+		if ( empty( $raw_tiers ) ) {
+			return [];
+		}
+
+		$processed = [];
+
+		foreach ( $raw_tiers as $tier ) {
+
+			$qty =
+				absint(
+					$tier['qty']
+						?? $tier['min_qty']
+						?? $tier['quantity']
+						?? 0
+				);
+
+			if ( ! $qty ) {
+				continue;
+			}
+
+			$result =
+				$this->pricing
+					->costs()
+					->calculate(
+						$product_id,
+						$variation_id,
+						$qty
+					);
+
+			if (
+				CostCalculator::STATUS_PRICE_ON_REQUEST
+				=== ( $result['status'] ?? '' )
+			) {
+				continue;
+			}
+
+			$processed[] = [
+				'qty' =>
+					$qty,
+
+				'price' =>
+					(float) (
+						$result['article_price']
+							?? 0.0
+					),
+			];
+		}
+
+		return $processed;
 	}
 
 

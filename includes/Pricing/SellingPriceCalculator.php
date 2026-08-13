@@ -240,8 +240,42 @@ final class SellingPriceCalculator {
 		float $amount
 	): float {
 
-		return (float) round(
-			$amount
+		$amount =
+			$this->normalize_amount(
+				$amount
+			);
+
+		if ( 0.0 === $amount ) {
+			return 0.0;
+		}
+
+		$rounded =
+			(float) ceil(
+				$amount
+			);
+
+		if ( $rounded <= 0 ) {
+			return 0.0;
+		}
+
+		$last_digit =
+			(int) fmod(
+				$rounded,
+				10
+			);
+
+		if ( 9 === $last_digit ) {
+			return $rounded;
+		}
+
+		return (float) (
+			(
+				(int) floor(
+					( $rounded + 9 ) / 10
+				)
+				* 10
+			)
+			- 1
 		);
 	}
 

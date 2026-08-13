@@ -305,6 +305,16 @@ final class RestController {
 					$this->pricing
 						->markup_rules()
 						->finishing_default(),
+
+				'print_price_markup' =>
+					$this->pricing
+						->markup_rules()
+						->print_price_default(),
+
+				'print_fee_markup' =>
+					$this->pricing
+						->markup_rules()
+						->print_fee_default(),
 			]
 		);
 	}
@@ -366,6 +376,64 @@ final class RestController {
 				->markup_rules()
 				->set_finishing_default(
 					$finishing_markup
+				);
+
+			$this->pricing
+				->markup_rules()
+				->set_print_price_default(
+					$finishing_markup
+				);
+
+			$this->pricing
+				->markup_rules()
+				->set_print_fee_default(
+					$finishing_markup
+				);
+		}
+
+		if ( array_key_exists( 'print_price_markup', $data ) ) {
+
+			$print_price_markup =
+				$this->markup(
+					$request,
+					'print_price_markup'
+				);
+
+			if (
+				is_wp_error(
+					$print_price_markup
+				)
+			) {
+				return $print_price_markup;
+			}
+
+			$this->pricing
+				->markup_rules()
+				->set_print_price_default(
+					$print_price_markup
+				);
+		}
+
+		if ( array_key_exists( 'print_fee_markup', $data ) ) {
+
+			$print_fee_markup =
+				$this->markup(
+					$request,
+					'print_fee_markup'
+				);
+
+			if (
+				is_wp_error(
+					$print_fee_markup
+				)
+			) {
+				return $print_fee_markup;
+			}
+
+			$this->pricing
+				->markup_rules()
+				->set_print_fee_default(
+					$print_fee_markup
 				);
 		}
 
@@ -551,6 +619,13 @@ final class RestController {
 		\WP_REST_Request $request
 	) {
 
+		$data =
+			$request->get_json_params();
+
+		if ( ! is_array( $data ) ) {
+			$data = [];
+		}
+
 		$id =
 			absint(
 				$request['id']
@@ -567,30 +642,81 @@ final class RestController {
 		}
 
 
-		$markup =
-			$this->markup(
-				$request
-			);
+		$price_markup =
+			array_key_exists(
+				'price_markup_percent',
+				$data
+			)
+				? $this->markup(
+					$request,
+					'price_markup_percent'
+				)
+				: (
+					array_key_exists(
+						'markup_percent',
+						$data
+					)
+						? $this->markup(
+							$request,
+							'markup_percent'
+						)
+						: null
+				);
+
+		$fee_markup =
+			array_key_exists(
+				'fee_markup_percent',
+				$data
+			)
+				? $this->markup(
+					$request,
+					'fee_markup_percent'
+				)
+				: $price_markup;
 
 		if (
 			is_wp_error(
-				$markup
+				$price_markup
 			)
 		) {
-			return $markup;
+			return $price_markup;
 		}
 
+		if (
+			is_wp_error(
+				$fee_markup
+			)
+		) {
+			return $fee_markup;
+		}
 
-		$saved =
+		$price_saved =
 			$this->pricing
 				->markup_repository()
 				->save(
-					MarkupRepository::TYPE_PRINT_OPTION,
+					MarkupRepository::TYPE_PRINT_OPTION_PRICE,
 					$id,
-					$markup
+					null !== $price_markup
+						? (float) $price_markup
+						: $this->pricing
+							->markup_rules()
+							->print_price_default()
 				);
 
-		if ( ! $saved ) {
+		$fee_saved =
+			$this->pricing
+				->markup_repository()
+				->save(
+					MarkupRepository::TYPE_PRINT_OPTION_FEE,
+					$id,
+					null !== $fee_markup
+						? (float) $fee_markup
+						: $this->pricing
+							->markup_rules()
+							->print_fee_default()
+				);
+
+		if ( ! $price_saved || ! $fee_saved ) {
 			return new \WP_Error(
 				'pdxw_print_option_markup_save_failed',
 				'Could not save print option markup.',
@@ -606,8 +732,19 @@ final class RestController {
 				'id' =>
 					$id,
 
-				'markup_percent' =>
-					$markup,
+				'price_markup_percent' =>
+					null !== $price_markup
+						? (float) $price_markup
+						: $this->pricing
+							->markup_rules()
+							->print_price_default(),
+
+				'fee_markup_percent' =>
+					null !== $fee_markup
+						? (float) $fee_markup
+						: $this->pricing
+							->markup_rules()
+							->print_fee_default(),
 			]
 		);
 	}
@@ -638,6 +775,18 @@ final class RestController {
 				->markup_repository()
 				->delete(
 					MarkupRepository::TYPE_PRINT_OPTION,
+					$id
+				)
+			|| $this->pricing
+				->markup_repository()
+				->delete(
+					MarkupRepository::TYPE_PRINT_OPTION_PRICE,
+					$id
+				)
+			|| $this->pricing
+				->markup_repository()
+				->delete(
+					MarkupRepository::TYPE_PRINT_OPTION_FEE,
 					$id
 				);
 
