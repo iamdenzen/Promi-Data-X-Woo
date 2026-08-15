@@ -38,6 +38,8 @@ final class Promi {
 
 	private Logger $logger;
 
+	private Notifier $notifier;
+
 	private Client $client;
 
 	private Queue $queue;
@@ -83,6 +85,8 @@ final class Promi {
 
 		$this->logger = new Logger();
 
+		$this->notifier = new Notifier();
+
 		$this->client = new Client(
 			$this->logger
 		);
@@ -101,7 +105,8 @@ final class Promi {
 		$this->indexer = new Indexer(
 			$this->client,
 			$this->queue,
-			$this->logger
+			$this->logger,
+			$this->notifier
 		);
 
 
@@ -130,7 +135,8 @@ final class Promi {
 			$this->indexer,
 			$this->client,
 			$this->logger,
-			$this->product_sync
+			$this->product_sync,
+			$this->notifier
 		);
 
 
@@ -214,6 +220,11 @@ final class Promi {
 
 	public function logger(): Logger {
 		return $this->logger;
+	}
+
+
+	public function notifier(): Notifier {
+		return $this->notifier;
 	}
 
 

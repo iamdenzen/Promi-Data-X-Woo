@@ -507,6 +507,55 @@ final class PromiPages {
 
 						</tr>
 
+
+						<tr>
+
+							<th scope="row">
+
+								<label for="pdxw-notification-emails">
+									<?php
+									echo esc_html__(
+										'Notification Recipients',
+										'promi-data-x-woo'
+									);
+									?>
+								</label>
+
+							</th>
+
+
+							<td>
+
+								<textarea
+									id="pdxw-notification-emails"
+									class="large-text"
+									rows="4"
+									placeholder="<?php echo esc_attr__(
+										'one@example.com, two@example.com',
+										'promi-data-x-woo'
+									); ?>"
+								><?php
+								echo esc_textarea(
+									implode(
+										"\n",
+										Config::notification_emails()
+									)
+								);
+								?></textarea>
+
+								<p class="description">
+									<?php
+									echo esc_html__(
+										'One email address per line (or comma-separated). These addresses receive notifications about Promi import errors, newly queued work, and index runs that found nothing to update.',
+										'promi-data-x-woo'
+									);
+									?>
+								</p>
+
+							</td>
+
+						</tr>
+
 					</tbody>
 
 				</table>

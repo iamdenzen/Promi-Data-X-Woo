@@ -391,6 +391,31 @@ final class CartPricing {
 
 		/*
 		|--------------------------------------------------------------------------
+		| Round Once, At The Boundary
+		|--------------------------------------------------------------------------
+		|
+		| $final_unit previously carried full calculation precision (e.g.
+		| 2.3456) all the way into WooCommerce. WooCommerce's own price
+		| display rounds to wc_get_price_decimals() (default 2) when
+		| showing the unit price, but WC_Cart still multiplies the raw
+		| unrounded value by quantity for the actual line total. At high
+		| quantities that mismatch becomes visible: a displayed "2.35"
+		| unit price does not actually multiply out to qty x 2.35.
+		|
+		| Rounding here, once, before the price is committed to
+		| WooCommerce, makes the displayed unit price and the real
+		| quantity-multiplied total agree exactly.
+		*/
+
+		$final_unit =
+			(float) wc_format_decimal(
+				$final_unit,
+				wc_get_price_decimals()
+			);
+
+
+		/*
+		|--------------------------------------------------------------------------
 		| Apply Final Price to WooCommerce
 		|--------------------------------------------------------------------------
 		*/

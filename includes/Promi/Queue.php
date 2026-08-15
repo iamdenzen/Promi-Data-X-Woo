@@ -280,11 +280,15 @@ final class Queue {
 	 * Record a failure.
 	 *
 	 * Failed jobs retry automatically up to MAX_ATTEMPTS.
+	 *
+	 * @return bool True when this failure was permanent (MAX_ATTEMPTS
+	 *              exhausted, status set to STATUS_FAILED). False when the
+	 *              job was rescheduled for another attempt.
 	 */
 	public function fail(
 		object $job,
 		string $error
-	): void {
+	): bool {
 
 		global $wpdb;
 
@@ -318,7 +322,7 @@ final class Queue {
 				]
 			);
 
-			return;
+			return false;
 		}
 
 		$wpdb->update(
@@ -334,6 +338,8 @@ final class Queue {
 				'id' => (int) $job->id,
 			]
 		);
+
+		return true;
 	}
 
 	/**

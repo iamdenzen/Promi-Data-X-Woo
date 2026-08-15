@@ -67,6 +67,8 @@ final class Admin {
 
 	private MarkupPage $markup_page;
 
+	private InquiriesPage $inquiries_page;
+
 
 	private bool $initialized = false;
 
@@ -173,6 +175,19 @@ final class Admin {
 
 		/*
 		|--------------------------------------------------------------------------
+		| Inquiries Admin
+		|--------------------------------------------------------------------------
+		|
+		| Lists price-on-request quote submissions from the storefront
+		| (Frontend\Inquiries owns storage/query logic).
+		*/
+
+		$this->inquiries_page =
+			new InquiriesPage();
+
+
+		/*
+		|--------------------------------------------------------------------------
 		| Admin Navigation
 		|--------------------------------------------------------------------------
 		|
@@ -190,7 +205,8 @@ final class Admin {
 				$this->promi_pages,
 				$this->pricing_page,
 				$this->printing_page,
-				$this->markup_page
+				$this->markup_page,
+				$this->inquiries_page
 			);
 
 
@@ -352,6 +368,8 @@ final class Admin {
 
 		$this->markup_page->init();
 
+		$this->inquiries_page->init();
+
 
 		do_action(
 			'pdxw_admin_init',
@@ -403,6 +421,11 @@ final class Admin {
 
 	public function printing_page(): PrintingPage {
 		return $this->printing_page;
+	}
+
+
+	public function inquiries_page(): InquiriesPage {
+		return $this->inquiries_page;
 	}
 
 

@@ -96,5 +96,51 @@ CX.api = {
 					payload
 				)
 		});
+	},
+
+
+	/**
+	 * Submit a price-on-request inquiry.
+	 *
+	 * Typical payload:
+	 *
+	 * {
+	 *     product_id: 123,
+	 *     variation_id: 456,
+	 *     qty: 100,
+	 *     name: "...",
+	 *     email: "...",
+	 *     phone: "...",
+	 *     message: "...",
+	 *     print_positions: {
+	 *         12: 8
+	 *     }
+	 * }
+	 */
+	submitInquiry(payload = {}) {
+
+		return jQuery.ajax({
+
+			url:
+				window.cxatc_vars.ajax_url,
+
+			type:
+				"POST",
+
+			dataType:
+				"json",
+
+			data:
+				Object.assign(
+					{
+						action:
+							"cx_submit_inquiry",
+
+						security:
+							window.cxatc_vars.nonce
+					},
+					payload
+				)
+		});
 	}
 };

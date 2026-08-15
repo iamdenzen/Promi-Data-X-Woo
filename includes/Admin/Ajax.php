@@ -2,6 +2,7 @@
 
 namespace PromiDataXWoo\Admin;
 
+use PromiDataXWoo\Frontend\Inquiries;
 use PromiDataXWoo\Promi\Config;
 use PromiDataXWoo\Promi\IgnoreRules;
 use PromiDataXWoo\Promi\Promi;
@@ -79,6 +80,12 @@ final class Ajax {
 
 	public const ACTION_REMOVE_IGNORE_RULE =
 		'pdxw_promi_remove_ignore_rule';
+
+	public const ACTION_UPDATE_INQUIRY_STATUS =
+		'pdxw_update_inquiry_status';
+
+	public const ACTION_DELETE_INQUIRY =
+		'pdxw_delete_inquiry';
 
 
 	private Promi $promi;
@@ -167,6 +174,16 @@ final class Ajax {
 			'remove_ignore_rule'
 		);
 
+		$this->register_action(
+			self::ACTION_UPDATE_INQUIRY_STATUS,
+			'update_inquiry_status'
+		);
+
+		$this->register_action(
+			self::ACTION_DELETE_INQUIRY,
+			'delete_inquiry'
+		);
+
 
 		do_action(
 			'pdxw_admin_ajax_init',
@@ -206,6 +223,7 @@ final class Ajax {
 	 *
 	 * feed_url
 	 * batch_size
+	 * notification_emails (newline or comma separated)
 	 */
 	public function save_config(): void {
 
@@ -232,6 +250,18 @@ final class Ajax {
 					$_POST['batch_size']
 				)
 				: Config::batch_size();
+
+
+		$notification_emails_raw =
+			isset(
+				$_POST['notification_emails']
+			)
+				? sanitize_textarea_field(
+					wp_unslash(
+						$_POST['notification_emails']
+					)
+				)
+				: null;
 
 
 		/*
@@ -280,6 +310,25 @@ final class Ajax {
 		);
 
 
+		if ( null !== $notification_emails_raw ) {
+
+			$emails =
+				array_filter(
+					array_map(
+						'trim',
+						preg_split(
+							'/[\r\n,]+/',
+							$notification_emails_raw
+						) ?: []
+					)
+				);
+
+			Config::set_notification_emails(
+				$emails
+			);
+		}
+
+
 		wp_send_json_success(
 			[
 				'message' =>
@@ -293,6 +342,9 @@ final class Ajax {
 
 				'batch_size' =>
 					Config::batch_size(),
+
+				'notification_emails' =>
+					Config::notification_emails(),
 			]
 		);
 	}
@@ -1009,6 +1061,134 @@ final class Ajax {
 
 				'rules' =>
 					IgnoreRules::get_rules(),
+			]
+		);
+	}
+
+
+	/*
+	|--------------------------------------------------------------------------
+	| Inquiries
+	|--------------------------------------------------------------------------
+	*/
+
+	/**
+	 * Update one inquiry's triage status.
+	 */
+	public function update_inquiry_status(): void {
+
+		$this->authorize();
+
+
+		$id =
+			isset( $_POST['id'] )
+				? absint( $_POST['id'] )
+				: 0;
+
+		$status =
+			isset( $_POST['status'] )
+				? sanitize_key(
+					wp_unslash( $_POST['status'] )
+				)
+				: '';
+
+
+		if ( ! $id ) {
+
+			wp_send_json_error(
+				[
+					'message' =>
+						__( 'Please provide a valid inquiry ID.', 'promi-data-x-woo' ),
+				],
+				400
+			);
+		}
+
+
+		if ( ! Inquiries::is_valid_status( $status ) ) {
+
+			wp_send_json_error(
+				[
+					'message' =>
+						__( 'Please provide a valid status.', 'promi-data-x-woo' ),
+				],
+				400
+			);
+		}
+
+
+		if ( ! Inquiries::update_status( $id, $status ) ) {
+
+			wp_send_json_error(
+				[
+					'message' =>
+						__( 'The inquiry status could not be updated.', 'promi-data-x-woo' ),
+				],
+				500
+			);
+		}
+
+
+		wp_send_json_success(
+			[
+				'message' =>
+					__( 'Inquiry status updated.', 'promi-data-x-woo' ),
+
+				'id' =>
+					$id,
+
+				'status' =>
+					$status,
+			]
+		);
+	}
+
+
+	/**
+	 * Delete one inquiry.
+	 */
+	public function delete_inquiry(): void {
+
+		$this->authorize();
+
+
+		$id =
+			isset( $_POST['id'] )
+				? absint( $_POST['id'] )
+				: 0;
+
+
+		if ( ! $id ) {
+
+			wp_send_json_error(
+				[
+					'message' =>
+						__( 'Please provide a valid inquiry ID.', 'promi-data-x-woo' ),
+				],
+				400
+			);
+		}
+
+
+		if ( ! Inquiries::delete( $id ) ) {
+
+			wp_send_json_error(
+				[
+					'message' =>
+						__( 'The inquiry could not be deleted.', 'promi-data-x-woo' ),
+				],
+				500
+			);
+		}
+
+
+		wp_send_json_success(
+			[
+				'message' =>
+					__( 'Inquiry deleted.', 'promi-data-x-woo' ),
+
+				'id' =>
+					$id,
 			]
 		);
 	}

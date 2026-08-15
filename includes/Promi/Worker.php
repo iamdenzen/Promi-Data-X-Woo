@@ -11,19 +11,22 @@ final class Worker {
 	private Client $client;
 	private Logger $logger;
 	private ProductSync $product_sync;
+	private Notifier $notifier;
 
 	public function __construct(
 		Queue $queue,
 		Indexer $indexer,
 		Client $client,
 		Logger $logger,
-		ProductSync $product_sync
+		ProductSync $product_sync,
+		Notifier $notifier
 	) {
 		$this->queue        = $queue;
 		$this->indexer      = $indexer;
 		$this->client       = $client;
 		$this->logger       = $logger;
 		$this->product_sync = $product_sync;
+		$this->notifier     = $notifier;
 	}
 
 	public function run(): void {
@@ -145,7 +148,7 @@ final class Worker {
 
 		} catch ( \Throwable $e ) {
 
-			$this->queue->fail(
+			$permanent = $this->queue->fail(
 				$job,
 				$e->getMessage()
 			);
@@ -160,6 +163,29 @@ final class Worker {
 					'attempt' => (int) $job->attempts,
 				]
 			);
+
+			/*
+			 * Only notify on the final, permanent failure — not on every
+			 * transient retry attempt — to avoid alert spam for jobs that
+			 * recover on their own.
+			 */
+			if ( $permanent ) {
+
+				$this->notifier->notify_error(
+					sprintf(
+						'Promi job permanently failed for SKU %s (action: %s) after %d attempts.',
+						$job->sku,
+						$job->action,
+						(int) $job->attempts
+					),
+					[
+						'id'    => (int) $job->id,
+						'sku'   => $job->sku,
+						'action' => $job->action,
+						'error' => $e->getMessage(),
+					]
+				);
+			}
 
 			return false;
 		}

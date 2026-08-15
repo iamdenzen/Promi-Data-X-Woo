@@ -421,6 +421,20 @@ final class Assets {
 		);
 
 		$this->enqueue_script(
+			'events-inquiry',
+			'events/inquiry.js',
+			[
+				'jquery',
+				$this->handle(
+					'api'
+				),
+				$this->handle(
+					'state'
+				),
+			]
+		);
+
+		$this->enqueue_script(
 			'events-qty',
 			'events/qty.js',
 			[

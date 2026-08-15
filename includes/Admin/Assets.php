@@ -290,6 +290,11 @@ final class Assets {
 						$this->menu->url(
 							Menu::PRINTING_SLUG
 						),
+
+					'inquiries' =>
+						$this->menu->url(
+							Menu::INQUIRIES_SLUG
+						),
 				],
 
 
@@ -340,6 +345,12 @@ final class Assets {
 
 					'remove_ignore_rule' =>
 						'pdxw_promi_remove_ignore_rule',
+
+					'update_inquiry_status' =>
+						'pdxw_update_inquiry_status',
+
+					'delete_inquiry' =>
+						'pdxw_delete_inquiry',
 				],
 
 

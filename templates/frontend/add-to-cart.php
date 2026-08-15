@@ -707,7 +707,75 @@ $is_price_on_request =
 
 
 					<div class="cx-por-notice" style="<?php echo $is_price_on_request ? '' : 'display:none;'; ?>">
-						<?php echo esc_html__( 'Für dieses Produkt erhalten Sie auf Anfrage ein individuelles Angebot.', 'promi-data-x-woo' ); ?>
+
+						<p>
+							<?php echo esc_html__( 'Für dieses Produkt erhalten Sie auf Anfrage ein individuelles Angebot.', 'promi-data-x-woo' ); ?>
+						</p>
+
+
+						<div class="cx-inquiry-form">
+
+							<div class="cx-inquiry-message" style="display:none;"></div>
+
+							<p class="cx-inquiry-field">
+								<label for="cx-inquiry-name">
+									<?php echo esc_html__( 'Name', 'promi-data-x-woo' ); ?>
+								</label>
+
+								<input
+									type="text"
+									id="cx-inquiry-name"
+									name="inquiry_name"
+									required
+								>
+							</p>
+
+							<p class="cx-inquiry-field">
+								<label for="cx-inquiry-email">
+									<?php echo esc_html__( 'E-Mail', 'promi-data-x-woo' ); ?>
+								</label>
+
+								<input
+									type="email"
+									id="cx-inquiry-email"
+									name="inquiry_email"
+									required
+								>
+							</p>
+
+							<p class="cx-inquiry-field">
+								<label for="cx-inquiry-phone">
+									<?php echo esc_html__( 'Telefon (optional)', 'promi-data-x-woo' ); ?>
+								</label>
+
+								<input
+									type="tel"
+									id="cx-inquiry-phone"
+									name="inquiry_phone"
+								>
+							</p>
+
+							<p class="cx-inquiry-field">
+								<label for="cx-inquiry-message">
+									<?php echo esc_html__( 'Ihre Nachricht (optional)', 'promi-data-x-woo' ); ?>
+								</label>
+
+								<textarea
+									id="cx-inquiry-message"
+									name="inquiry_message"
+									rows="3"
+								></textarea>
+							</p>
+
+							<button
+								type="button"
+								class="button cx-inquiry-submit"
+							>
+								<?php echo esc_html__( 'Anfrage senden', 'promi-data-x-woo' ); ?>
+							</button>
+
+						</div>
+
 					</div>
 
 					<div class="cxatc-error cxatc-sample-error">

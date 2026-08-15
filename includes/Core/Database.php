@@ -15,7 +15,7 @@ defined( 'ABSPATH' ) || exit;
  */
 final class Database {
 
-	public const VERSION = '1.2.0';
+	public const VERSION = '1.3.0';
 
 	public const VERSION_OPTION = 'pdxw_db_version';
 
@@ -89,6 +89,16 @@ final class Database {
 
 			'pricing_markup_rules' =>
 				'cx_pricing_markup_rules',
+
+
+			/*
+			|--------------------------------------------------------------------------
+			| Inquiries
+			|--------------------------------------------------------------------------
+			*/
+
+			'inquiries' =>
+				'cx_inquiries',
 		];
 
 		if ( ! isset( $tables[ $table ] ) ) {
@@ -508,6 +518,51 @@ final class Database {
 
 		/*
 		|--------------------------------------------------------------------------
+		| Inquiries
+		|--------------------------------------------------------------------------
+		|
+		| "Price on request" products don't show Add to Cart; a customer
+		| submits this form instead to ask for a quote.
+		|
+		| product_id / variation_id
+		|     0 when the inquiry isn't tied to a specific product.
+		|
+		| selections
+		|     JSON snapshot of any print position/option selections and
+		|     quantity present at submission time, for admin context.
+		|
+		| status
+		|     new / read / replied / closed — admin-managed triage state.
+		*/
+
+		$table = self::table(
+			'inquiries'
+		);
+
+		$sql = "CREATE TABLE {$table} (
+			id bigint unsigned NOT NULL AUTO_INCREMENT,
+			product_id bigint unsigned NOT NULL DEFAULT 0,
+			variation_id bigint unsigned NOT NULL DEFAULT 0,
+			quantity int unsigned NOT NULL DEFAULT 0,
+			name varchar(255) NOT NULL,
+			email varchar(255) NOT NULL,
+			phone varchar(100) DEFAULT NULL,
+			message longtext DEFAULT NULL,
+			selections longtext DEFAULT NULL,
+			status varchar(20) NOT NULL DEFAULT 'new',
+			ip_address varchar(100) DEFAULT NULL,
+			created_at datetime DEFAULT CURRENT_TIMESTAMP,
+			PRIMARY KEY  (id),
+			KEY product_idx (product_id),
+			KEY status_idx (status),
+			KEY created_at_idx (created_at)
+		) {$charset};";
+
+		dbDelta( $sql );
+
+
+		/*
+		|--------------------------------------------------------------------------
 		| Database Version
 		|--------------------------------------------------------------------------
 		*/
@@ -632,6 +687,7 @@ final class Database {
 			'print_fees',
 			'print_relation',
 			'pricing_markup_rules',
+			'inquiries',
 		];
 	}
 }

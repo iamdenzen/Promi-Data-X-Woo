@@ -59,6 +59,9 @@ final class Menu {
 	public const MARKUP_SLUG =
 		'pdxw-pricing-markups';
 
+	public const INQUIRIES_SLUG =
+		'pdxw-inquiries';
+
 
 	/*
 	|--------------------------------------------------------------------------
@@ -89,6 +92,8 @@ final class Menu {
 
 	private MarkupPage $markup_page;
 
+	private InquiriesPage $inquiries_page;
+
 	private bool $initialized = false;
 
 	/**
@@ -105,12 +110,14 @@ final class Menu {
 		PromiPages $promi_pages,
 		PricingPage $pricing_page,
 		PrintingPage $printing_page,
-		MarkupPage $markup_page
+		MarkupPage $markup_page,
+		InquiriesPage $inquiries_page
 	) {
-		$this->promi_pages   = $promi_pages;
-		$this->pricing_page  = $pricing_page;
-		$this->printing_page = $printing_page;
-		$this->markup_page   = $markup_page;
+		$this->promi_pages    = $promi_pages;
+		$this->pricing_page   = $pricing_page;
+		$this->printing_page  = $printing_page;
+		$this->markup_page    = $markup_page;
+		$this->inquiries_page = $inquiries_page;
 	}
 
 
@@ -419,6 +426,35 @@ final class Menu {
 			);
 
 
+		/*
+		|--------------------------------------------------------------------------
+		| Inquiries
+		|--------------------------------------------------------------------------
+		*/
+
+		$this->page_hooks[
+			self::INQUIRIES_SLUG
+		] =
+			(string)
+			add_submenu_page(
+				self::ROOT_SLUG,
+				__(
+					'Inquiries',
+					'promi-data-x-woo'
+				),
+				__(
+					'Inquiries',
+					'promi-data-x-woo'
+				),
+				self::CAPABILITY,
+				self::INQUIRIES_SLUG,
+				[
+					$this->inquiries_page,
+					'render',
+				]
+			);
+
+
 		do_action(
 			'pdxw_admin_menu_registered',
 			$this,
@@ -506,6 +542,7 @@ final class Menu {
 			self::PRICING_SLUG,
 			self::PRINTING_SLUG,
 			self::MARKUP_SLUG,
+			self::INQUIRIES_SLUG,
 		];
 	}
 

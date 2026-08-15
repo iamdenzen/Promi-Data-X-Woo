@@ -33,6 +33,8 @@ final class Ajax {
 
 	public const ADD_TO_CART_ACTION = 'cx_add_to_cart';
 
+	public const SUBMIT_INQUIRY_ACTION = 'cx_submit_inquiry';
+
 
 	private ProductData $product_data;
 
@@ -104,6 +106,29 @@ final class Ajax {
 			[
 				$this,
 				'add_to_cart',
+			]
+		);
+
+
+		/*
+		|--------------------------------------------------------------------------
+		| Price-on-Request Inquiries
+		|--------------------------------------------------------------------------
+		*/
+
+		add_action(
+			'wp_ajax_' . self::SUBMIT_INQUIRY_ACTION,
+			[
+				$this,
+				'submit_inquiry',
+			]
+		);
+
+		add_action(
+			'wp_ajax_nopriv_' . self::SUBMIT_INQUIRY_ACTION,
+			[
+				$this,
+				'submit_inquiry',
 			]
 		);
 
@@ -605,6 +630,99 @@ final class Ajax {
 
 				'fragments' =>
 					$fragments,
+			]
+		);
+	}
+
+
+	/*
+	|--------------------------------------------------------------------------
+	| Price-on-Request Inquiries
+	|--------------------------------------------------------------------------
+	*/
+
+	/**
+	 * Submit a price-on-request inquiry.
+	 *
+	 * Existing request:
+	 *
+	 * {
+	 *     product_id:   123,
+	 *     variation_id: 456,
+	 *     qty:          100,
+	 *     name:         "...",
+	 *     email:        "...",
+	 *     phone:        "...",
+	 *     message:      "...",
+	 *     print_positions: {
+	 *         12: 7
+	 *     }
+	 * }
+	 */
+	public function submit_inquiry(): void {
+
+		$this->verify_nonce();
+
+
+		$product_id =
+			absint(
+				$_POST['product_id']
+					?? 0
+			);
+
+		$variation_id =
+			absint(
+				$_POST['variation_id']
+					?? 0
+			);
+
+		$quantity =
+			absint(
+				$_POST['qty']
+					?? 0
+			);
+
+		$print_positions =
+			$this->sanitize_print_positions(
+				$_POST['print_positions']
+					?? []
+			);
+
+
+		$result =
+			Inquiries::submit(
+				[
+					'product_id'   => $product_id,
+					'variation_id' => $variation_id,
+					'quantity'     => $quantity,
+					'name'         => wp_unslash( $_POST['name'] ?? '' ),
+					'email'        => wp_unslash( $_POST['email'] ?? '' ),
+					'phone'        => wp_unslash( $_POST['phone'] ?? '' ),
+					'message'      => wp_unslash( $_POST['message'] ?? '' ),
+					'selections'   => $print_positions,
+				]
+			);
+
+
+		if ( is_wp_error( $result ) ) {
+
+			wp_send_json_error(
+				[
+					'message' =>
+						$result->get_error_message(),
+				],
+				400
+			);
+		}
+
+
+		wp_send_json_success(
+			[
+				'message' =>
+					__(
+						'Thank you — your request has been sent. We will get back to you shortly.',
+						'promi-data-x-woo'
+					),
 			]
 		);
 	}

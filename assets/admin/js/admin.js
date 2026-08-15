@@ -313,6 +313,22 @@
 
 
 	/**
+	 * Inquiries page message.
+	 */
+	function inquiriesMessage(
+		value,
+		type = "success"
+	) {
+
+		message(
+			"#pdxw-inquiries-message",
+			value,
+			type
+		);
+	}
+
+
+	/**
 	 * Append one line to the dashboard worker log.
 	 */
 	function workerLog(
@@ -844,6 +860,14 @@
 				);
 
 
+			const notificationEmails =
+				String(
+					$("#pdxw-notification-emails")
+						.val()
+						|| ""
+				);
+
+
 			loading(
 				$button,
 				true,
@@ -871,7 +895,10 @@
 							batchSize
 						)
 							? batchSize
-							: 1
+							: 1,
+
+					notification_emails:
+						notificationEmails
 				}
 			)
 				.done(
@@ -897,6 +924,22 @@
 							$("#pdxw-batch-size")
 								.val(
 									data.batch_size
+								);
+						}
+
+
+						if (
+							Array.isArray(
+								data.notification_emails
+							)
+						) {
+
+							$("#pdxw-notification-emails")
+								.val(
+									data.notification_emails
+										.join(
+											"\n"
+										)
 								);
 						}
 
@@ -2012,6 +2055,219 @@
 					error => {
 
 						ignoreRuleMessage(
+							errorMessage(
+								error
+							),
+							"error"
+						);
+					}
+				)
+				.always(
+					() => {
+
+						if (
+							$.contains(
+								document,
+								$button[0]
+							)
+						) {
+
+							loading(
+								$button,
+								false
+							);
+						}
+					}
+				);
+		}
+	);
+
+
+	/*
+	|--------------------------------------------------------------------------
+	| Inquiries
+	|--------------------------------------------------------------------------
+	*/
+
+	$(document).on(
+		"change",
+		".pdxw-inquiry-status-select",
+		function () {
+
+			const $select =
+				$(this);
+
+			const $row =
+				$select.closest(
+					"tr"
+				);
+
+			const id =
+				Number.parseInt(
+					$row.data(
+						"inquiry-id"
+					),
+					10
+				) || 0;
+
+			const status =
+				String(
+					$select.val()
+						|| ""
+				);
+
+
+			if (
+				!id
+				|| !status
+			) {
+				return;
+			}
+
+
+			$select.prop(
+				"disabled",
+				true
+			);
+
+
+			request(
+				"update_inquiry_status",
+				{
+					id,
+					status
+				}
+			)
+				.done(
+					data => {
+
+						$row
+							.find(
+								".pdxw-status"
+							)
+							.attr(
+								"class",
+								"pdxw-status pdxw-status--"
+									+ status
+							)
+							.text(
+								status.charAt(0).toUpperCase()
+									+ status.slice(1)
+							);
+
+
+						inquiriesMessage(
+							data.message
+								|| text(
+									"saved",
+									"Saved."
+								),
+							"success"
+						);
+					}
+				)
+				.fail(
+					error => {
+
+						inquiriesMessage(
+							errorMessage(
+								error
+							),
+							"error"
+						);
+					}
+				)
+				.always(
+					() => {
+
+						$select.prop(
+							"disabled",
+							false
+						);
+					}
+				);
+		}
+	);
+
+
+	$(document).on(
+		"click",
+		".pdxw-delete-inquiry",
+		function () {
+
+			const $button =
+				$(this);
+
+			const $row =
+				$button.closest(
+					"tr"
+				);
+
+			const id =
+				Number.parseInt(
+					$row.data(
+						"inquiry-id"
+					),
+					10
+				) || 0;
+
+
+			if (!id) {
+				return;
+			}
+
+
+			if (
+				!window.confirm(
+					"Delete this inquiry? This cannot be undone."
+				)
+			) {
+				return;
+			}
+
+
+			loading(
+				$button,
+				true,
+				text(
+					"processing",
+					"Processing…"
+				)
+			);
+
+
+			request(
+				"delete_inquiry",
+				{
+					id
+				}
+			)
+				.done(
+					data => {
+
+						$row
+							.fadeOut(
+								150,
+								function () {
+									$(this).remove();
+								}
+							);
+
+
+						inquiriesMessage(
+							data.message
+								|| text(
+									"done",
+									"Done."
+								),
+							"success"
+						);
+					}
+				)
+				.fail(
+					error => {
+
+						inquiriesMessage(
 							errorMessage(
 								error
 							),

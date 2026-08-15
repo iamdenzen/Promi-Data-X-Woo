@@ -14,15 +14,18 @@ final class Indexer {
 	private Client $client;
 	private Queue $queue;
 	private Logger $logger;
+	private Notifier $notifier;
 
 	public function __construct(
 		Client $client,
 		Queue $queue,
-		Logger $logger
+		Logger $logger,
+		Notifier $notifier
 	) {
-		$this->client = $client;
-		$this->queue  = $queue;
-		$this->logger = $logger;
+		$this->client   = $client;
+		$this->queue    = $queue;
+		$this->logger   = $logger;
+		$this->notifier = $notifier;
 	}
 
 	public function run(): void {
@@ -39,6 +42,13 @@ final class Indexer {
 
 			$this->logger->error(
 				'Promi index failed to fetch feed.',
+				[
+					'error' => $content->get_error_message(),
+				]
+			);
+
+			$this->notifier->notify_error(
+				'Promi index failed to fetch the feed.',
 				[
 					'error' => $content->get_error_message(),
 				]
@@ -62,6 +72,10 @@ final class Indexer {
 		if ( empty( $lines ) ) {
 
 			$this->logger->error(
+				'Promi feed contained no usable lines.'
+			);
+
+			$this->notifier->notify_error(
 				'Promi feed contained no usable lines.'
 			);
 
@@ -92,6 +106,13 @@ final class Indexer {
 				]
 			);
 
+			$this->notifier->notify_error(
+				'Promi feed safety check failed — the feed had fewer items than expected, so nothing was queued (mass-disable protection).',
+				[
+					'items' => count( $lines ),
+				]
+			);
+
 			return;
 		}
 
@@ -103,19 +124,45 @@ final class Indexer {
 				'Promi feed contained no valid product records.'
 			);
 
+			$this->notifier->notify_error(
+				'Promi feed contained no valid product records.'
+			);
+
 			return;
 		}
 
-		$this->synchronize_index( $feed );
+		$changes = $this->synchronize_index( $feed );
 
-		$this->queue_stale_products();
+		$disabled = $this->queue_stale_products();
 
 		$this->logger->info(
 			'Promi index completed.',
 			[
 				'products' => count( $feed ),
+				'created'  => count( $changes['created'] ),
+				'updated'  => count( $changes['updated'] ),
+				'disabled' => count( $disabled ),
 			]
 		);
+
+		if (
+			empty( $changes['created'] )
+			&& empty( $changes['updated'] )
+			&& empty( $disabled )
+		) {
+
+			$this->notifier->notify_no_changes(
+				count( $feed )
+			);
+
+		} else {
+
+			$this->notifier->notify_queue_summary(
+				$changes['created'],
+				$changes['updated'],
+				$disabled
+			);
+		}
 	}
 
 	/**
@@ -198,14 +245,20 @@ final class Indexer {
 		return $feed;
 	}
 
+	/**
+	 * @return array{created:array<int,string>,updated:array<int,string>}
+	 */
 	private function synchronize_index(
 		array $feed
-	): void {
+	): array {
 
 		global $wpdb;
 
 		$table = Database::table( 'promi_index' );
 		$now   = current_time( 'mysql' );
+
+		$created = [];
+		$updated = [];
 
 		/**
 		 * 30k–50k products is reasonable to map once in memory and avoids
@@ -237,10 +290,14 @@ final class Indexer {
 					]
 				);
 
-				$this->queue->enqueue(
-					$sku,
-					Queue::ACTION_CREATE
-				);
+				if (
+					$this->queue->enqueue(
+						$sku,
+						Queue::ACTION_CREATE
+					)
+				) {
+					$created[] = $sku;
+				}
 
 				continue;
 			}
@@ -266,15 +323,27 @@ final class Indexer {
 
 			if ( $changed ) {
 
-				$this->queue->enqueue(
-					$sku,
-					Queue::ACTION_UPDATE
-				);
+				if (
+					$this->queue->enqueue(
+						$sku,
+						Queue::ACTION_UPDATE
+					)
+				) {
+					$updated[] = $sku;
+				}
 			}
 		}
+
+		return [
+			'created' => $created,
+			'updated' => $updated,
+		];
 	}
 
-	private function queue_stale_products(): void {
+	/**
+	 * @return array<int,string>
+	 */
+	private function queue_stale_products(): array {
 
 		global $wpdb;
 
@@ -297,7 +366,7 @@ final class Indexer {
 		);
 
 		if ( empty( $stale_skus ) ) {
-			return;
+			return [];
 		}
 
 		$queued = [];
@@ -341,5 +410,7 @@ final class Indexer {
 				)
 			);
 		}
+
+		return $queued;
 	}
 }
