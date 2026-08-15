@@ -519,6 +519,77 @@ final class MarkupRules {
 	}
 
 
+	/**
+	 * Return all print-option markup overrides, merged by print option.
+	 *
+	 * TYPE_PRINT_OPTION_PRICE and TYPE_PRINT_OPTION_FEE are stored as
+	 * separate rule rows. Admin/API consumers need one row per print
+	 * option showing both values side by side.
+	 *
+	 * Each row:
+	 *
+	 * [
+	 *     'id'                    => 12,
+	 *     'price_markup_percent'  => 25.0,
+	 *     'fee_markup_percent'    => 30.0,
+	 * ]
+	 */
+	public function print_option_overrides(): array {
+
+		$price_rules =
+			$this->repository
+				->all(
+					MarkupRepository::TYPE_PRINT_OPTION_PRICE
+				);
+
+		$fee_rules =
+			$this->repository
+				->all(
+					MarkupRepository::TYPE_PRINT_OPTION_FEE
+				);
+
+		$rows = [];
+
+		foreach ( $price_rules as $rule ) {
+
+			$id =
+				absint(
+					$rule['target_id'] ?? 0
+				);
+
+			if ( ! $id ) {
+				continue;
+			}
+
+			$rows[ $id ]['id'] = $id;
+
+			$rows[ $id ]['price_markup_percent'] =
+				(float) ( $rule['markup_percent'] ?? 0 );
+		}
+
+		foreach ( $fee_rules as $rule ) {
+
+			$id =
+				absint(
+					$rule['target_id'] ?? 0
+				);
+
+			if ( ! $id ) {
+				continue;
+			}
+
+			$rows[ $id ]['id'] = $id;
+
+			$rows[ $id ]['fee_markup_percent'] =
+				(float) ( $rule['markup_percent'] ?? 0 );
+		}
+
+		ksort( $rows );
+
+		return array_values( $rows );
+	}
+
+
 	/*
 	|--------------------------------------------------------------------------
 	| Repository

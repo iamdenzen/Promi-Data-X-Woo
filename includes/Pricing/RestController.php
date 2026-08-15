@@ -607,10 +607,8 @@ final class RestController {
 
 		return new \WP_REST_Response(
 			$this->pricing
-				->markup_repository()
-				->all(
-					MarkupRepository::TYPE_PRINT_OPTION
-				)
+				->markup_rules()
+				->print_option_overrides()
 		);
 	}
 

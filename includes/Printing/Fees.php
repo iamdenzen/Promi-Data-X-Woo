@@ -179,6 +179,17 @@ final class Fees {
 					$context
 				)
 			) {
+
+				$this->debug_log(
+					sprintf(
+						'fee "%s" skipped for option #%d: requirement not met (requirement=%s, context=%s)',
+						(string) ( $fee->fee_label ?? '' ),
+						$option_id,
+						(string) ( $fee->requirement ?? '' ),
+						wp_json_encode( $context )
+					)
+				);
+
 				continue;
 			}
 
@@ -216,6 +227,15 @@ final class Fees {
 
 
 			if ( null === $value ) {
+
+				$this->debug_log(
+					sprintf(
+						'fee "%s" skipped for option #%d: no usable purchase_amount or amount',
+						(string) ( $fee->fee_label ?? '' ),
+						$option_id
+					)
+				);
+
 				continue;
 			}
 
@@ -999,5 +1019,35 @@ final class Fees {
 			default =>
 				true,
 		};
+	}
+
+
+	/*
+	|--------------------------------------------------------------------------
+	| Debug Logging
+	|--------------------------------------------------------------------------
+	*/
+
+	/**
+	 * Log why a fee was excluded from a purchase breakdown.
+	 *
+	 * Only active when WP_DEBUG is enabled, so this never runs on a
+	 * production site unless the site owner has already turned on
+	 * debug logging.
+	 */
+	private function debug_log(
+		string $message
+	): void {
+
+		if (
+			! defined( 'WP_DEBUG' )
+			|| ! WP_DEBUG
+		) {
+			return;
+		}
+
+		error_log(
+			'[PromiDataXWoo\\Printing\\Fees] ' . $message
+		);
 	}
 }
