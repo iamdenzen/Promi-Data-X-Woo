@@ -41,6 +41,63 @@ final class ManufacturerDiscount {
 
 
 	/**
+	 * Return every brand term that has an explicitly configured discount.
+	 *
+	 * Used by the admin/API layer to list existing overrides, the same
+	 * way MarkupRepository::all() lists category/print-option rules.
+	 */
+	public function all(): array {
+
+		$terms =
+			get_terms(
+				[
+					'taxonomy'   => self::TAXONOMY,
+					'hide_empty' => false,
+
+					'meta_query' => [
+						[
+							'key'     => self::META_KEY,
+							'compare' => 'EXISTS',
+						],
+					],
+				]
+			);
+
+		if (
+			is_wp_error( $terms )
+			|| empty( $terms )
+		) {
+			return [];
+		}
+
+		$result = [];
+
+		foreach ( $terms as $term ) {
+
+			if ( ! $term instanceof \WP_Term ) {
+				continue;
+			}
+
+			$result[] = [
+
+				'term_id' =>
+					$term->term_id,
+
+				'name' =>
+					$term->name,
+
+				'discount_percent' =>
+					$this->get_for_brand(
+						$term->term_id
+					),
+			];
+		}
+
+		return $result;
+	}
+
+
+	/**
 	 * Get the manufacturer discount for a product.
 	 *
 	 * The first assigned product_brand is used.

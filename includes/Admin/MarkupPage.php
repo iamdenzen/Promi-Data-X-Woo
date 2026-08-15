@@ -3,6 +3,7 @@
 namespace PromiDataXWoo\Admin;
 
 use PromiDataXWoo\Core\Database;
+use PromiDataXWoo\Pricing\ManufacturerDiscount;
 use PromiDataXWoo\Pricing\MarkupRepository;
 use PromiDataXWoo\Pricing\Pricing;
 
@@ -114,6 +115,28 @@ final class MarkupPage {
 
 
 	/**
+	 * Return all WooCommerce product brand terms.
+	 *
+	 * Relies on the product_brand taxonomy already being registered by
+	 * whatever brand plugin/integration the store uses (see Catalog\Brands).
+	 */
+	private function brands(): array {
+
+		$brands =
+			get_terms(
+				[
+					'taxonomy'   => ManufacturerDiscount::TAXONOMY,
+					'hide_empty' => false,
+				]
+			);
+
+		return is_wp_error( $brands )
+			? []
+			: $brands;
+	}
+
+
+	/**
 	 * Render the Pricing Markups admin page.
 	 */
 	public function render(): void {
@@ -162,11 +185,20 @@ final class MarkupPage {
 				->print_option_overrides();
 
 
+		$manufacturer_discounts =
+			$this->pricing
+				->manufacturer_discount()
+				->all();
+
+
 		$categories =
 			$this->categories();
 
 		$print_options =
 			$this->print_options();
+
+		$brands =
+			$this->brands();
 
 
 		$category_rule_ids =
@@ -184,6 +216,15 @@ final class MarkupPage {
 				wp_list_pluck(
 					$print_option_rules,
 					'id'
+				)
+			);
+
+		$brand_rule_ids =
+			array_map(
+				'absint',
+				wp_list_pluck(
+					$manufacturer_discounts,
+					'term_id'
 				)
 			);
 
@@ -700,6 +741,174 @@ final class MarkupPage {
 									<button
 										type="button"
 										class="button button-small pdxw-delete-print-option-rule"
+									>
+										<?php echo esc_html__( 'Remove', 'promi-data-x-woo' ); ?>
+									</button>
+
+								</td>
+
+							</tr>
+
+						<?php endforeach; ?>
+
+					<?php endif; ?>
+
+				</tbody>
+
+			</table>
+
+
+			<hr>
+
+
+			<!-- Manufacturer Discounts -->
+
+			<h2>
+				<?php echo esc_html__( 'Manufacturer Discounts', 'promi-data-x-woo' ); ?>
+			</h2>
+
+			<p class="description">
+				<?php echo esc_html__( 'Applied when a product\'s Promi cost is unavailable and its price is derived from the manufacturer\'s recommended selling price (RRP) instead. The discount converts the RRP into an effective cost basis before markup. Configured per brand (WooCommerce product_brand taxonomy).', 'promi-data-x-woo' ); ?>
+			</p>
+
+
+			<div class="pdxw-add-rule">
+
+				<select id="pdxw-new-brand">
+
+					<option value="">
+						<?php echo esc_html__( 'Select a brand…', 'promi-data-x-woo' ); ?>
+					</option>
+
+					<?php foreach ( $brands as $brand ) : ?>
+
+						<?php
+						$brand_id =
+							absint(
+								$brand->term_id
+							);
+						?>
+
+						<option
+							value="<?php echo esc_attr( $brand_id ); ?>"
+							<?php disabled( in_array( $brand_id, $brand_rule_ids, true ) ); ?>
+						>
+							<?php
+							echo esc_html(
+								$brand->name
+								. (
+									in_array(
+										$brand_id,
+										$brand_rule_ids,
+										true
+									)
+									? ' — ' . __( 'Already configured', 'promi-data-x-woo' )
+									: ''
+								)
+							);
+							?>
+						</option>
+
+					<?php endforeach; ?>
+
+				</select>
+
+				<input
+					type="number"
+					id="pdxw-new-brand-discount"
+					class="small-text"
+					value=""
+					min="0"
+					max="100"
+					step="0.01"
+					placeholder="0"
+				>
+
+				<button
+					type="button"
+					id="pdxw-add-brand-rule"
+					class="button"
+				>
+					<?php echo esc_html__( 'Add Manufacturer Discount', 'promi-data-x-woo' ); ?>
+				</button>
+
+			</div>
+
+
+			<table
+				class="wp-list-table widefat fixed striped"
+				id="pdxw-brand-rules"
+				style="margin-top: 16px;"
+			>
+
+				<thead>
+					<tr>
+						<th>
+							<?php echo esc_html__( 'Brand', 'promi-data-x-woo' ); ?>
+						</th>
+
+						<th>
+							<?php echo esc_html__( 'Discount (%)', 'promi-data-x-woo' ); ?>
+						</th>
+
+						<th>
+							<?php echo esc_html__( 'Actions', 'promi-data-x-woo' ); ?>
+						</th>
+					</tr>
+				</thead>
+
+				<tbody>
+
+					<?php if ( empty( $manufacturer_discounts ) ) : ?>
+
+						<tr class="pdxw-empty-row">
+							<td colspan="3">
+								<?php echo esc_html__( 'No manufacturer discounts configured.', 'promi-data-x-woo' ); ?>
+							</td>
+						</tr>
+
+					<?php else : ?>
+
+						<?php foreach ( $manufacturer_discounts as $rule ) : ?>
+
+							<?php
+							$brand_id =
+								absint(
+									$rule['term_id'] ?? 0
+								);
+							?>
+
+							<tr
+								data-rule-id="<?php echo esc_attr( $brand_id ); ?>"
+							>
+
+								<td class="pdxw-rule-name">
+									<?php echo esc_html( (string) ( $rule['name'] ?? '' ) ); ?>
+								</td>
+
+								<td>
+									<input
+										type="number"
+										class="small-text pdxw-rule-discount"
+										value="<?php echo esc_attr( $rule['discount_percent'] ?? 0 ); ?>"
+										min="0"
+										max="100"
+										step="0.01"
+									>
+								</td>
+
+								<td>
+
+									<button
+										type="button"
+										class="button button-small pdxw-save-brand-rule"
+									>
+										<?php echo esc_html__( 'Save', 'promi-data-x-woo' ); ?>
+									</button>
+
+									<button
+										type="button"
+										class="button button-small pdxw-delete-brand-rule"
 									>
 										<?php echo esc_html__( 'Remove', 'promi-data-x-woo' ); ?>
 									</button>
@@ -1301,6 +1510,184 @@ final class MarkupPage {
 
 			/*
 			|--------------------------------------------------------------------------
+			| Add Manufacturer Discount Rule
+			|--------------------------------------------------------------------------
+			|
+			| A discount is bounded to 0-100, unlike an open-ended markup, so
+			| it gets its own validator rather than reusing validateMarkup().
+			*/
+
+			function validateDiscount(
+				value
+			) {
+
+				const discount =
+					parseFloat( value );
+
+				return (
+					! isNaN( discount )
+					&& discount >= 0
+					&& discount <= 100
+				)
+					? discount
+					: null;
+			}
+
+
+			function addBrandRule() {
+
+				const select =
+					document.getElementById(
+						'pdxw-new-brand'
+					);
+
+				const discountInput =
+					document.getElementById(
+						'pdxw-new-brand-discount'
+					);
+
+				const id =
+					parseInt(
+						select.value,
+						10
+					);
+
+				const discount =
+					validateDiscount(
+						discountInput.value
+					);
+
+				if ( ! id ) {
+
+					showNotice(
+						<?php echo wp_json_encode( __( 'Please select a brand.', 'promi-data-x-woo' ) ); ?>,
+						'error'
+					);
+
+					return;
+				}
+
+				if ( null === discount ) {
+
+					showNotice(
+						<?php echo wp_json_encode( __( 'Please enter a discount between 0 and 100.', 'promi-data-x-woo' ) ); ?>,
+						'error'
+					);
+
+					return;
+				}
+
+				apiFetch(
+					'/pricing/manufacturer-discounts/' + id,
+					'POST',
+					{
+						discount_percent:
+							discount,
+					}
+				)
+				.then(
+					function () {
+
+						const option =
+							select.options[
+								select.selectedIndex
+							];
+
+						const name =
+							option.text
+								.replace(
+									' — <?php echo esc_js( __( 'Already configured', 'promi-data-x-woo' ) ); ?>',
+									''
+								);
+
+						const tbody =
+							document
+								.querySelector(
+									'#pdxw-brand-rules tbody'
+								);
+
+						const emptyRow =
+							tbody.querySelector(
+								'.pdxw-empty-row'
+							);
+
+						if ( emptyRow ) {
+							emptyRow.remove();
+						}
+
+						const row =
+							document.createElement(
+								'tr'
+							);
+
+						row.dataset.ruleId =
+							id;
+
+						row.innerHTML =
+							'<td class="pdxw-rule-name">'
+							+ escapeHtml( name )
+							+ '</td>'
+							+ '<td>'
+							+ '<input type="number" class="small-text pdxw-rule-discount" '
+							+ 'value="' + discount + '" min="0" max="100" step="0.01">'
+							+ '</td>'
+							+ '<td>'
+							+ '<button type="button" class="button button-small pdxw-save-brand-rule">'
+							+ <?php echo wp_json_encode( __( 'Save', 'promi-data-x-woo' ) ); ?>
+							+ '</button> '
+							+ '<button type="button" class="button button-small pdxw-delete-brand-rule">'
+							+ <?php echo wp_json_encode( __( 'Remove', 'promi-data-x-woo' ) ); ?>
+							+ '</button>'
+							+ '</td>';
+
+						tbody.appendChild(
+							row
+						);
+
+						select
+							.querySelector(
+								'option[value="'
+								+ id
+								+ '"]'
+							)
+							.disabled =
+								true;
+
+						select.value = '';
+
+						discountInput.value = '';
+
+						showNotice(
+							<?php echo wp_json_encode( __( 'Manufacturer discount added.', 'promi-data-x-woo' ) ); ?>,
+							'success'
+						);
+					}
+				)
+				.catch(
+					function ( error ) {
+
+						showNotice(
+							error.message
+							|| <?php echo wp_json_encode( __( 'Error adding manufacturer discount.', 'promi-data-x-woo' ) ); ?>,
+							'error'
+						);
+					}
+				);
+			}
+
+
+			document
+				.getElementById(
+					'pdxw-add-brand-rule'
+				)
+				.addEventListener(
+					'click',
+					addBrandRule
+				);
+
+
+			/*
+			|--------------------------------------------------------------------------
 			| Save And Delete Existing Rules
 			|--------------------------------------------------------------------------
 			*/
@@ -1485,6 +1872,176 @@ final class MarkupPage {
 								showNotice(
 									error.message
 									|| <?php echo wp_json_encode( __( 'Error removing markup override.', 'promi-data-x-woo' ) ); ?>,
+									'error'
+								);
+							}
+						);
+
+						return;
+					}
+
+
+					/*
+					|--------------------------------------------------------------------------
+					| Manufacturer Discount Rules
+					|--------------------------------------------------------------------------
+					*/
+
+					const saveBrandButton =
+						event.target.closest(
+							'.pdxw-save-brand-rule'
+						);
+
+					if ( saveBrandButton ) {
+
+						const row =
+							saveBrandButton.closest(
+								'tr'
+							);
+
+						const id =
+							row.dataset.ruleId;
+
+						const discount =
+							validateDiscount(
+								row
+									.querySelector(
+										'.pdxw-rule-discount'
+									)
+									.value
+							);
+
+						if ( null === discount ) {
+							showNotice(
+								<?php echo wp_json_encode( __( 'Please enter a discount between 0 and 100.', 'promi-data-x-woo' ) ); ?>,
+								'error'
+							);
+
+							return;
+						}
+
+						apiFetch(
+							'/pricing/manufacturer-discounts/' + id,
+							'POST',
+							{
+								discount_percent:
+									discount,
+							}
+						)
+						.then(
+							function () {
+
+								showNotice(
+									<?php echo wp_json_encode( __( 'Manufacturer discount saved.', 'promi-data-x-woo' ) ); ?>,
+									'success'
+								);
+							}
+						)
+						.catch(
+							function ( error ) {
+
+								showNotice(
+									error.message
+									|| <?php echo wp_json_encode( __( 'Error saving manufacturer discount.', 'promi-data-x-woo' ) ); ?>,
+									'error'
+								);
+							}
+						);
+
+						return;
+					}
+
+
+					const deleteBrandButton =
+						event.target.closest(
+							'.pdxw-delete-brand-rule'
+						);
+
+					if ( deleteBrandButton ) {
+
+						const row =
+							deleteBrandButton.closest(
+								'tr'
+							);
+
+						const id =
+							row.dataset.ruleId;
+
+						const name =
+							row
+								.querySelector(
+									'.pdxw-rule-name'
+								)
+								.textContent
+								.trim();
+
+						if (
+							! window.confirm(
+								<?php echo wp_json_encode( __( 'Remove the manufacturer discount for', 'promi-data-x-woo' ) ); ?>
+								+ ' "'
+								+ name
+								+ '"?'
+							)
+						) {
+							return;
+						}
+
+						apiFetch(
+							'/pricing/manufacturer-discounts/' + id,
+							'DELETE'
+						)
+						.then(
+							function () {
+
+								const tbody =
+									row.closest(
+										'tbody'
+									);
+
+								row.remove();
+
+								const select =
+									document.getElementById(
+										'pdxw-new-brand'
+									);
+
+								const option =
+									select.querySelector(
+										'option[value="'
+										+ id
+										+ '"]'
+									);
+
+								if ( option ) {
+									option.disabled = false;
+								}
+
+								if (
+									! tbody.querySelector(
+										'tr'
+									)
+								) {
+									tbody.innerHTML =
+										'<tr class="pdxw-empty-row">'
+										+ '<td colspan="3">'
+										+ escapeHtml(
+											<?php echo wp_json_encode( __( 'No manufacturer discounts configured.', 'promi-data-x-woo' ) ); ?>
+										)
+										+ '</td></tr>';
+								}
+
+								showNotice(
+									<?php echo wp_json_encode( __( 'Manufacturer discount removed.', 'promi-data-x-woo' ) ); ?>,
+									'success'
+								);
+							}
+						)
+						.catch(
+							function ( error ) {
+
+								showNotice(
+									error.message
+									|| <?php echo wp_json_encode( __( 'Error removing manufacturer discount.', 'promi-data-x-woo' ) ); ?>,
 									'error'
 								);
 							}

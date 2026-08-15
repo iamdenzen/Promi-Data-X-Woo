@@ -237,6 +237,78 @@ final class RestController {
 					],
 			]
 		);
+
+
+		/*
+		|--------------------------------------------------------------------------
+		| Manufacturer Discounts
+		|--------------------------------------------------------------------------
+		*/
+
+		register_rest_route(
+			'pdxw/v1',
+			'/pricing/manufacturer-discounts',
+			[
+				'methods' =>
+					\WP_REST_Server::READABLE,
+
+				'permission_callback' =>
+					[
+						$this,
+						'permission',
+					],
+
+				'callback' =>
+					[
+						$this,
+						'get_manufacturer_discounts',
+					],
+			]
+		);
+
+
+		register_rest_route(
+			'pdxw/v1',
+			'/pricing/manufacturer-discounts/(?P<id>\d+)',
+			[
+				'methods' =>
+					\WP_REST_Server::EDITABLE,
+
+				'permission_callback' =>
+					[
+						$this,
+						'permission',
+					],
+
+				'callback' =>
+					[
+						$this,
+						'save_manufacturer_discount',
+					],
+			]
+		);
+
+
+		register_rest_route(
+			'pdxw/v1',
+			'/pricing/manufacturer-discounts/(?P<id>\d+)',
+			[
+				'methods' =>
+					\WP_REST_Server::DELETABLE,
+
+				'permission_callback' =>
+					[
+						$this,
+						'permission',
+					],
+
+				'callback' =>
+					[
+						$this,
+						'delete_manufacturer_discount',
+					],
+			]
+		);
 	}
 
 
@@ -274,6 +346,44 @@ final class RestController {
 				'pdxw_invalid_markup',
 				sprintf(
 					'%s must be a non-negative number.',
+					$key
+				),
+				[
+					'status' => 400,
+				]
+			);
+		}
+
+		return (float) $value;
+	}
+
+
+	/**
+	 * Validate a discount percentage.
+	 *
+	 * Unlike a markup, a discount is bounded to 0-100.
+	 *
+	 * @return float|\WP_Error
+	 */
+	private function discount_percent(
+		\WP_REST_Request $request,
+		string $key = 'discount_percent'
+	) {
+
+		$value =
+			$request->get_param(
+				$key
+			);
+
+		if (
+			! is_numeric( $value )
+			|| (float) $value < 0
+			|| (float) $value > 100
+		) {
+			return new \WP_Error(
+				'pdxw_invalid_discount',
+				sprintf(
+					'%s must be a number between 0 and 100.',
 					$key
 				),
 				[
@@ -798,6 +908,133 @@ final class RestController {
 			);
 		}
 
+
+		return new \WP_REST_Response(
+			[
+				'id'      => $id,
+				'deleted' => true,
+			]
+		);
+	}
+
+
+	/*
+	|--------------------------------------------------------------------------
+	| Manufacturer Discounts
+	|--------------------------------------------------------------------------
+	*/
+
+	public function get_manufacturer_discounts(): \WP_REST_Response {
+
+		return new \WP_REST_Response(
+			$this->pricing
+				->manufacturer_discount()
+				->all()
+		);
+	}
+
+
+	public function save_manufacturer_discount(
+		\WP_REST_Request $request
+	) {
+
+		$id =
+			absint(
+				$request['id']
+			);
+
+		$term =
+			get_term(
+				$id,
+				ManufacturerDiscount::TAXONOMY
+			);
+
+		if (
+			! $term
+			|| is_wp_error( $term )
+		) {
+			return new \WP_Error(
+				'pdxw_brand_not_found',
+				'Brand not found.',
+				[
+					'status' => 404,
+				]
+			);
+		}
+
+		$discount =
+			$this->discount_percent(
+				$request
+			);
+
+		if (
+			is_wp_error( $discount )
+		) {
+			return $discount;
+		}
+
+		$saved =
+			$this->pricing
+				->manufacturer_discount()
+				->save_for_brand(
+					$id,
+					$discount
+				);
+
+		if ( ! $saved ) {
+			return new \WP_Error(
+				'pdxw_manufacturer_discount_save_failed',
+				'Could not save manufacturer discount.',
+				[
+					'status' => 500,
+				]
+			);
+		}
+
+		return new \WP_REST_Response(
+			[
+				'id'               => $id,
+				'discount_percent' => $discount,
+			]
+		);
+	}
+
+
+	public function delete_manufacturer_discount(
+		\WP_REST_Request $request
+	) {
+
+		$id =
+			absint(
+				$request['id']
+			);
+
+		if ( ! $id ) {
+			return new \WP_Error(
+				'pdxw_brand_not_found',
+				'Brand not found.',
+				[
+					'status' => 404,
+				]
+			);
+		}
+
+		$deleted =
+			$this->pricing
+				->manufacturer_discount()
+				->delete_for_brand(
+					$id
+				);
+
+		if ( ! $deleted ) {
+			return new \WP_Error(
+				'pdxw_manufacturer_discount_delete_failed',
+				'Could not delete manufacturer discount.',
+				[
+					'status' => 500,
+				]
+			);
+		}
 
 		return new \WP_REST_Response(
 			[

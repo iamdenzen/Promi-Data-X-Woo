@@ -428,34 +428,57 @@ final class CartPricing {
 				: [];
 
 
-		$printing_total =
+		/*
+		 * Per-unit printing price across every print position/option
+		 * attached to this product (no fees included).
+		 */
+		$printing_unit_price =
 			$this->numeric_value(
-				$printing['total']
+				$printing['unit_price']
 					?? 0
 			);
 
 
-		$printing_tier_total =
+		/*
+		 * printing_unit_price × quantity. Calculator already computes this
+		 * directly (print_total), so we reuse it rather than
+		 * re-multiplying to avoid rounding drift.
+		 */
+		$printing_total =
 			$this->numeric_value(
 				$printing['print_total']
 					?? 0
 			);
 
 
-		$printing_fees_total =
+		/*
+		 * All setup + ongoing print fees, combined into the single total
+		 * actually charged for this line. This is already a line total,
+		 * not a per-unit amount — fixed/setup fees do not scale with
+		 * quantity the way per-unit printing does.
+		 */
+		$fees_total =
 			$this->numeric_value(
 				$printing['fees']
 					?? 0
 			);
 
 
+		$fee_breakdown =
+			is_array( $printing['fee_breakdown'] ?? null )
+				? $printing['fee_breakdown']
+				: [];
+
+
 		/*
 		|--------------------------------------------------------------------------
-		| Article Breakdown
+		| Article (Base Product) Breakdown
 		|--------------------------------------------------------------------------
+		|
+		| The base product price only. Excludes printing and fees entirely.
 		*/
 
-		$article_unit =
+		$base_unit_price =
 			$this->numeric_nullable(
 				$article_result['article_price']
 					?? null
@@ -463,11 +486,12 @@ final class CartPricing {
 
 
 		/*
-		 * If Case 3 is active, article_unit is intentionally null.
+		 * If Case 3 (price on request) is active, base_unit_price is
+		 * intentionally null.
 		 */
-		$article_total =
-			null !== $article_unit
-				? $article_unit * $quantity
+		$base_total =
+			null !== $base_unit_price
+				? $base_unit_price * $quantity
 				: 0.0;
 
 
@@ -475,6 +499,22 @@ final class CartPricing {
 		|--------------------------------------------------------------------------
 		| Final Breakdown
 		|--------------------------------------------------------------------------
+		|
+		| Comprehensive, explicitly-named cart item pricing breakdown.
+		|
+		| Intended to be consumed directly by cart/checkout templates
+		| (e.g. a child theme's cart.php) without needing to know how the
+		| underlying calculation works:
+		|
+		|     base_unit_price       product price alone, per unit
+		|     base_total            base_unit_price × quantity
+		|     printing_unit_price   all attached print options, per unit
+		|     printing_total        printing_unit_price × quantity
+		|     fees_total            all print fees, one combined total
+		|     unit_price            actual WooCommerce per-unit price
+		|     line_total            actual WooCommerce line total
+		|
+		|     line_total === base_total + printing_total + fees_total
 		*/
 
 		$cart_item[
@@ -488,6 +528,86 @@ final class CartPricing {
 
 			'price_on_request' =>
 				$price_on_request,
+
+			'quantity' =>
+				$quantity,
+
+			'product_id' =>
+				$product_id,
+
+			'variation_id' =>
+				$variation_id,
+
+			/*
+			|----------------------------------------------------------------
+			| Base Product Price
+			|----------------------------------------------------------------
+			*/
+
+			'base_unit_price' =>
+				$this->nullable_money(
+					$base_unit_price
+				),
+
+			'base_total' =>
+				$this->money(
+					$base_total
+				),
+
+			/*
+			|----------------------------------------------------------------
+			| Printing Price
+			|----------------------------------------------------------------
+			*/
+
+			'printing_unit_price' =>
+				$this->money(
+					$printing_unit_price
+				),
+
+			'printing_total' =>
+				$this->money(
+					$printing_total
+				),
+
+			/*
+			|----------------------------------------------------------------
+			| Fees
+			|----------------------------------------------------------------
+			*/
+
+			'fees_total' =>
+				$this->money(
+					$fees_total
+				),
+
+			'fee_breakdown' =>
+				$fee_breakdown,
+
+			/*
+			|----------------------------------------------------------------
+			| Final WooCommerce Price
+			|----------------------------------------------------------------
+			*/
+
+			'unit_price' =>
+				$this->money(
+					$final_unit
+				),
+
+			'line_total' =>
+				$this->money(
+					$final_unit * $quantity
+				),
+
+			/*
+			|----------------------------------------------------------------
+			| Diagnostics
+			|----------------------------------------------------------------
+			|
+			| Internal cost/markup detail. Not usually needed by a cart
+			| template, kept for admin/debug use.
+			*/
 
 			'cost' =>
 				$this->nullable_money(
@@ -512,55 +632,6 @@ final class CartPricing {
 					]
 						?? 0
 				),
-
-			'article_unit' =>
-				$this->nullable_money(
-					$article_unit
-				),
-
-			'article_total' =>
-				$this->money(
-					$article_total
-				),
-
-			'printing_tier_total' =>
-				$this->money(
-					$printing_tier_total
-				),
-
-			'printing_fees_total' =>
-				$this->money(
-					$printing_fees_total
-				),
-
-			'printing_total' =>
-				$this->money(
-					$printing_total
-				),
-
-			'printing_unit' =>
-				$this->money(
-					$printing_total / $quantity
-				),
-
-			'final_unit' =>
-				$this->money(
-					$final_unit
-				),
-
-			'line_total' =>
-				$this->money(
-					$final_unit * $quantity
-				),
-
-			'quantity' =>
-				$quantity,
-
-			'product_id' =>
-				$product_id,
-
-			'variation_id' =>
-				$variation_id,
 		];
 	}
 
