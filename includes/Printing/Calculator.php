@@ -1241,6 +1241,63 @@ final class Calculator {
 	}
 
 
+	/**
+	 * Preview the customer-facing selling amount for a single print fee.
+	 *
+	 * Applies the same cost-basis → finishing markup → rounding rules as
+	 * calculate_breakdown() / calculate_selection(), for a single fee row
+	 * supplied directly by the caller.
+	 *
+	 * Used by the product page configurator, which previews fees per
+	 * print option before a cart-side selection/context exists.
+	 */
+	public function preview_fee_amount(
+		int $option_id,
+		float $cost_basis,
+		string $fee_type,
+		string $fee_label = ''
+	): float {
+
+		if ( $cost_basis <= 0 ) {
+			return 0.0;
+		}
+
+		$fee_markup =
+			$this->pricing
+				->markup_rules()
+				->print_fee_markup(
+					$option_id
+				);
+
+		$type =
+			$this->fee_type(
+				[
+					'type'  => $fee_type,
+					'label' => $fee_label,
+				]
+			);
+
+		if ( 'setup' === $type ) {
+
+			return max(
+				0.0,
+				(float) $this->selling_prices->setup(
+					$cost_basis,
+					$fee_markup
+				)
+			);
+		}
+
+		return max(
+			0.0,
+			(float) $this->selling_prices->ongoing(
+				$cost_basis,
+				$fee_markup
+			)
+		);
+	}
+
+
 	/*
 	|--------------------------------------------------------------------------
 	| Purchase Fee Helpers

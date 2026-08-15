@@ -104,10 +104,10 @@ final class Fees {
 	/**
 	 * Calculate total purchase-side fees for one print option.
 	 *
-	 * If a fee has no purchase_amount, it contributes zero.
-	 *
-	 * We deliberately do NOT fall back to the selling amount because the
-	 * new pricing model must be cost-based.
+	 * Unlike calculate_purchase_breakdown(), this aggregate has no
+	 * fallback to the selling amount when purchase_amount is missing.
+	 * Only used by Calculator's legacy compatibility fallback; the
+	 * normal path is calculate_purchase_breakdown().
 	 */
 	public function calculate_purchase(
 		int $option_id,
@@ -188,10 +188,14 @@ final class Fees {
 			| Purchase Amount
 			|--------------------------------------------------------------------------
 			|
-			| A missing purchase_amount means we do not have a cost basis for
-			| this fee.
+			| Some historical print_option data (imported from an older CX
+			| Print installer that failed to create the purchase_amount
+			| column, see Core\Database) never had purchase_amount
+			| populated.
 			|
-			| Do NOT use the selling amount as a fallback.
+			| Mirroring get_applicable_purchase_price()'s behaviour for
+			| print tier prices, fall back to the Promi selling amount as
+			| the cost basis rather than silently dropping the fee.
 			*/
 
 			$value =
@@ -199,6 +203,16 @@ final class Fees {
 					$fee,
 					'purchase_amount'
 				);
+
+
+			if ( null === $value ) {
+
+				$value =
+					$this->fee_value(
+						$fee,
+						'amount'
+					);
+			}
 
 
 			if ( null === $value ) {

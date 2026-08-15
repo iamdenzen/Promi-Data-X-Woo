@@ -487,11 +487,13 @@ final class Configurator {
 
 			'prices' =>
 				$this->prepare_prices(
+					$option_id,
 					$prices
 				),
 
 			'fees' =>
 				$this->prepare_fees(
+					$option_id,
 					$fees
 				),
 		];
@@ -499,6 +501,7 @@ final class Configurator {
 
 
 	private function prepare_prices(
+		int $option_id,
 		array $prices
 	): array {
 
@@ -517,11 +520,7 @@ final class Configurator {
 			$processed =
 				$this->calculator
 					->calculate_selection(
-						(int) (
-							$price
-								->print_option_id
-								?? 0
-						),
+						$option_id,
 						$quantity
 					);
 
@@ -542,6 +541,7 @@ final class Configurator {
 
 
 	private function prepare_fees(
+		int $option_id,
 		array $fees
 	): array {
 
@@ -577,6 +577,28 @@ final class Configurator {
 				}
 			}
 
+			/*
+			 * Preview through the same cost-basis + finishing markup
+			 * rules used by the cart, so the product page shows the
+			 * actual customer-facing amount rather than Promi's raw
+			 * selling-side figure.
+			 */
+			$cost_basis =
+				isset( $fee->purchase_amount )
+				&& is_numeric( $fee->purchase_amount )
+				&& (float) $fee->purchase_amount > 0
+					? (float) $fee->purchase_amount
+					: (float) $fee->amount;
+
+			$amount =
+				$this->calculator
+					->preview_fee_amount(
+						$option_id,
+						$cost_basis,
+						(string) $fee->fee_type,
+						(string) $fee->fee_label
+					);
+
 			$result[] = [
 				'label' =>
 					(string)
@@ -604,9 +626,7 @@ final class Configurator {
 							->calculation_amount,
 
 				'amount' =>
-					(float)
-						$fee
-							->amount,
+					$amount,
 
 				'requirement' =>
 					$requirement,

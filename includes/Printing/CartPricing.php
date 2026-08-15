@@ -415,6 +415,126 @@ final class CartPricing {
 		}
 
 
+		return $this->append_fee_data(
+			$data,
+			$cart_item,
+			$selections
+		);
+	}
+
+
+	/**
+	 * Surface the print fee amounts the Calculator actually charges.
+	 *
+	 * Without this, setup/ongoing fees were silently folded into the
+	 * WooCommerce line price with no visible breakdown, making the cart
+	 * look like fees were not being charged at all.
+	 */
+	private function append_fee_data(
+		array $data,
+		array $cart_item,
+		array $selections
+	): array {
+
+		$calculator_selections =
+			$this->to_calculator_selections(
+				$selections
+			);
+
+		if ( empty( $calculator_selections ) ) {
+			return $data;
+		}
+
+		$product_id =
+			absint(
+				$cart_item['product_id']
+					?? 0
+			);
+
+		$variation_id =
+			absint(
+				$cart_item['variation_id']
+					?? 0
+			);
+
+		$quantity =
+			max(
+				1,
+				absint(
+					$cart_item['quantity']
+						?? 1
+				)
+			);
+
+		$breakdown =
+			$this->calculator
+				->calculate_breakdown(
+					$calculator_selections,
+					[
+						'product_id' =>
+							$product_id,
+
+						'variation_id' =>
+							$variation_id,
+
+						'quantity' =>
+							$quantity,
+					]
+				);
+
+		$fees =
+			$breakdown['fee_breakdown']
+				?? [];
+
+		if ( empty( $fees ) ) {
+			return $data;
+		}
+
+		$totals = [];
+
+		foreach ( $fees as $fee ) {
+
+			$selling =
+				(float) (
+					$fee['selling']
+						?? 0.0
+				);
+
+			if ( $selling <= 0 ) {
+				continue;
+			}
+
+			$label =
+				(string) (
+					$fee['label']
+						?? ''
+				);
+
+			if ( '' === $label ) {
+
+				$label =
+					'setup' === ( $fee['type'] ?? '' )
+						? __( 'Setup Fee', 'promi-data-x-woo' )
+						: __( 'Print Fee', 'promi-data-x-woo' );
+			}
+
+			$totals[ $label ] =
+				( $totals[ $label ] ?? 0.0 )
+				+ $selling;
+		}
+
+		foreach ( $totals as $label => $amount ) {
+
+			$data[] = [
+
+				'name' =>
+					$label,
+
+				'value' =>
+					wc_price( $amount ),
+			];
+		}
+
 		return $data;
 	}
 
