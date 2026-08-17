@@ -1089,9 +1089,11 @@ final class PromiPages {
 									<?php
 									$url =
 										esc_url(
-											(string) (
-												$row['json_url']
-													?? ''
+											Config::resolve_promi_url(
+												(string) (
+													$row['json_url']
+														?? ''
+												)
 											)
 										);
 									?>

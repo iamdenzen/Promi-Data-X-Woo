@@ -3,6 +3,7 @@
 namespace PromiDataXWoo\Admin;
 
 use PromiDataXWoo\Core\Database;
+use PromiDataXWoo\Promi\Config;
 use PromiDataXWoo\Promi\Promi;
 use WP_Post;
 
@@ -282,9 +283,11 @@ final class ProductMetaBox {
 						<?php
 						$json_url =
 							esc_url(
-								(string) (
-									$row['json_url']
-									?? ''
+								Config::resolve_promi_url(
+									(string) (
+										$row['json_url']
+										?? ''
+									)
 								)
 							);
 						?>

@@ -12,6 +12,16 @@ final class Config {
 
 	public const NOTIFICATION_EMAILS_OPTION = 'cx_promi_notification_emails';
 
+	/**
+	 * Trailing path Promi appends to the configured feed URL, e.g.
+	 *
+	 *     https://promi-dl.de/Profiles/Live/{guid}/import/import.txt
+	 *
+	 * Every per-product JSON URL in the feed shares the same base
+	 * (".../{guid}/") that precedes this suffix.
+	 */
+	private const FEED_PATH_SUFFIX = 'import/import.txt';
+
 	public static function feed_url(): string {
 
 		$url = get_option( self::FEED_OPTION, '' );
@@ -19,6 +29,104 @@ final class Config {
 		return is_string( $url )
 			? esc_url_raw( $url )
 			: '';
+	}
+
+	/**
+	 * The feed URL with its trailing "import/import.txt" removed and
+	 * exactly one trailing slash, e.g.
+	 *
+	 *     https://promi-dl.de/Profiles/Live/{guid}/
+	 *
+	 * Every per-product JSON URL Promi returns is relative to this base.
+	 * Returns '' when no feed URL is configured, or when the configured
+	 * URL doesn't end with the expected suffix (so callers never silently
+	 * build a URL against the wrong host).
+	 */
+	public static function promi_base_url(): string {
+
+		$url = self::feed_url();
+
+		if ( '' === $url ) {
+			return '';
+		}
+
+		if ( ! str_ends_with( $url, self::FEED_PATH_SUFFIX ) ) {
+			return '';
+		}
+
+		$url = substr(
+			$url,
+			0,
+			-strlen( self::FEED_PATH_SUFFIX )
+		);
+
+		return rtrim( $url, '/' ) . '/';
+	}
+
+	/**
+	 * Convert a full Promi JSON URL into a path relative to
+	 * promi_base_url(), for compact storage in cx_promi_index, e.g.
+	 *
+	 *     https://promi-dl.de/Profiles/Live/{guid}/A36/A36-MO1001b.json
+	 *         → /A36/A36-MO1001b.json
+	 *
+	 * Falls back to returning $url unchanged when it doesn't start with
+	 * the configured base — this must never silently corrupt a URL that
+	 * doesn't match what we expected.
+	 *
+	 * $base_url can be passed in when the caller already has it (e.g. a
+	 * loop processing many items) to avoid recomputing it per call.
+	 */
+	public static function relative_json_path(
+		string $url,
+		?string $base_url = null
+	): string {
+
+		$base_url ??= self::promi_base_url();
+
+		if (
+			'' === $base_url
+			|| 0 !== stripos( $url, $base_url )
+		) {
+			return $url;
+		}
+
+		return '/' . ltrim(
+			substr( $url, strlen( $base_url ) ),
+			'/'
+		);
+	}
+
+	/**
+	 * Resolve a Promi URL into a full, directly fetchable/clickable URL.
+	 *
+	 * Accepts either:
+	 *
+	 * - an already-absolute URL (legacy cx_promi_index rows stored before
+	 *   relative_json_path() existed, or any URL outside the feed's own
+	 *   domain) — returned unchanged.
+	 * - a path relative to promi_base_url(), e.g. "/A36/A36-MO1001b.json"
+	 *   — expanded against the configured feed's base URL.
+	 */
+	public static function resolve_promi_url( string $url ): string {
+
+		$url = trim( $url );
+
+		if ( '' === $url ) {
+			return '';
+		}
+
+		if ( preg_match( '#^https?://#i', $url ) ) {
+			return $url;
+		}
+
+		$base_url = self::promi_base_url();
+
+		if ( '' === $base_url ) {
+			return $url;
+		}
+
+		return $base_url . ltrim( $url, '/' );
 	}
 
 	public static function set_feed_url( string $url ): bool {

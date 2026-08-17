@@ -110,11 +110,18 @@ final class Client {
 
 	/**
 	 * Generic remote text request.
+	 *
+	 * $url may be a full absolute URL (the configured feed URL itself, or
+	 * a legacy cx_promi_index row stored before relative paths existed)
+	 * or a path relative to the feed's base URL — see
+	 * Config::resolve_promi_url().
 	 */
 	public function get_text(
 		string $url,
 		array $args = []
 	): string|\WP_Error {
+
+		$url = Config::resolve_promi_url( $url );
 
 		$url = esc_url_raw( $url );
 

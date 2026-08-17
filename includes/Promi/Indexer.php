@@ -256,6 +256,7 @@ final class Indexer {
 
 		$table = Database::table( 'promi_index' );
 		$now   = current_time( 'mysql' );
+		$base_url = Config::promi_base_url();
 
 		$created = [];
 		$updated = [];
@@ -277,6 +278,11 @@ final class Indexer {
 		}
 
 		foreach ( $feed as $sku => $item ) {
+
+			$item['url'] = Config::relative_json_path(
+				$item['url'],
+				$base_url
+			);
 
 			if ( ! isset( $existing[ $sku ] ) ) {
 
