@@ -774,6 +774,8 @@ $is_price_on_request =
 								<?php echo esc_html__( 'Anfrage senden', 'promi-data-x-woo' ); ?>
 							</button>
 
+							<?php do_action('woocommerce_after_add_to_cart_button'); ?>
+
 						</div>
 
 					</div>
