@@ -5,6 +5,7 @@ namespace PromiDataXWoo\Core;
 use PromiDataXWoo\Admin\Admin;
 use PromiDataXWoo\Catalog\Catalog;
 use PromiDataXWoo\Frontend\Frontend;
+use PromiDataXWoo\Mcp\Mcp;
 use PromiDataXWoo\Pricing\Pricing;
 use PromiDataXWoo\Printing\Printing;
 use PromiDataXWoo\Promi\Promi;
@@ -42,6 +43,8 @@ final class Plugin {
 	private ?Pricing $pricing = null;
 
 	private ?Printing $printing = null;
+
+	private ?Mcp $mcp = null;
 
 	private ?Promi $promi = null;
 
@@ -184,6 +187,23 @@ final class Plugin {
 
 		/*
 		|--------------------------------------------------------------------------
+		| MCP Integration
+		|--------------------------------------------------------------------------
+		|
+		| Optional: exposes tiered pricing / print config data as MCP tools
+		| when a WP MCP Server framework plugin is active. Only depends on
+		| Pricing and Printing.
+		*/
+
+		$this->mcp = new Mcp(
+			$this,
+			$this->pricing,
+			$this->printing
+		);
+
+
+		/*
+		|--------------------------------------------------------------------------
 		| Promi
 		|--------------------------------------------------------------------------
 		|
@@ -272,6 +292,15 @@ final class Plugin {
 
 		/*
 		|--------------------------------------------------------------------------
+		| MCP Integration
+		|--------------------------------------------------------------------------
+		*/
+
+		$this->mcp?->init();
+
+
+		/*
+		|--------------------------------------------------------------------------
 		| Promi
 		|--------------------------------------------------------------------------
 		|
@@ -334,6 +363,11 @@ final class Plugin {
 
 	public function printing(): ?Printing {
 		return $this->printing;
+	}
+
+
+	public function mcp(): ?Mcp {
+		return $this->mcp;
 	}
 
 
