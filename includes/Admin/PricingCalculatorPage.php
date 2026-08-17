@@ -180,7 +180,7 @@ final class PricingCalculatorPage {
 							$search
 						); ?>"
 						placeholder="<?php echo esc_attr__(
-							'Search name or SKU',
+							'Search by SKU',
 							'promi-data-x-woo'
 						); ?>"
 					>
@@ -575,7 +575,7 @@ final class PricingCalculatorPage {
 		];
 
 		if ( '' !== $search ) {
-			$args['s'] = $search;
+			$args['sku'] = $search;
 		}
 
 		$result =
