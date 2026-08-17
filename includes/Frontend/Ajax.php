@@ -265,6 +265,13 @@ final class Ajax {
 					$attributes
 				);
 
+		if ( ! empty( $data['invalid_combination'] ) ) {
+
+			wp_send_json_error(
+				'This combination is currently unavailable.'
+			);
+		}
+
 		if ( empty( $data ) ) {
 
 			wp_send_json_error(

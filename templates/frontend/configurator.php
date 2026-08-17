@@ -978,6 +978,15 @@ $tax_preview =
 		padding-bottom: 30px;
 	}
 
+	.cx-conf-row .cx-variation-attribute .cx-option.cx-option-disabled {
+		opacity: .35;
+	}
+
+	.cx-conf-row .cx-variation-attribute .cx-option.cx-option-disabled label {
+		cursor: not-allowed;
+		pointer-events: none;
+	}
+
 
 	/*
 	|--------------------------------------------------------------------------

@@ -164,6 +164,195 @@ window.CX = window.CX || {};
 
 
 	/**
+	 * Disable/grey out attribute options that cannot resolve to any
+	 * existing variation given what else is currently selected.
+	 *
+	 * Example: Color (Red, Blue, Green) x Size (SM, M, L) where only
+	 * Red-M, Green-SM and Blue-L actually exist as variations. Picking
+	 * Red must grey out SM and L in the Size group, since Red-SM and
+	 * Red-L don't exist.
+	 *
+	 * The matrix is read once from the "cx-variation-matrix" element the
+	 * server renders alongside the radios (see
+	 * Shortcodes::variation_attribute_radios()).
+	 */
+	function variationMatrix($scope) {
+
+		const raw =
+			$scope
+				.find(
+					".cx-variation-attributes"
+				)
+				.data(
+					"variation-matrix"
+				);
+
+		return Array.isArray(raw)
+			? raw
+			: [];
+	}
+
+
+	/**
+	 * Currently checked attribute values in one scope, keyed by input
+	 * name (e.g. "attribute_pa_farbe"), optionally omitting one name.
+	 */
+	function checkedAttributes($scope, omitName) {
+
+		const selected = {};
+
+		$scope
+			.find(
+				".cx-variation-attribute input:checked"
+			)
+			.each(
+				function () {
+
+					const name =
+						$(this).attr("name");
+
+					const match =
+						name?.match(
+							/\[(.*?)\]/
+						);
+
+					if (
+						!match?.[1]
+						|| name === omitName
+					) {
+						return;
+					}
+
+					selected[
+						match[1]
+					] =
+						String(
+							$(this).val()
+						);
+				}
+			);
+
+		return selected;
+	}
+
+
+	/**
+	 * Whether at least one variation in the matrix satisfies every
+	 * key/value pair in `selections`.
+	 */
+	function matrixHasMatch(matrix, selections) {
+
+		return matrix.some(
+			row =>
+				Object.entries(selections).every(
+					([key, value]) =>
+						String(
+							row?.attributes?.[key]
+								?? ""
+						) === value
+				)
+		);
+	}
+
+
+	/**
+	 * Recompute which options are still reachable and disable the rest.
+	 *
+	 * Runs to a fixed point: unchecking an option that just became
+	 * unreachable can itself change what's reachable in other groups, so
+	 * this repeats until nothing changes (bounded to avoid any risk of an
+	 * infinite loop).
+	 */
+	function refreshAvailability($scope) {
+
+		const matrix =
+			variationMatrix($scope);
+
+		if (!matrix.length) {
+			return;
+		}
+
+		let changed = true;
+		let guard = 0;
+
+		while (changed && guard < 6) {
+
+			changed = false;
+			guard++;
+
+			$scope
+				.find(
+					".cx-variation-attribute .cx-attribute-input"
+				)
+				.each(
+					function () {
+
+						const $input = $(this);
+
+						const name =
+							$input.attr("name");
+
+						const match =
+							name?.match(
+								/\[(.*?)\]/
+							);
+
+						if (!match?.[1]) {
+							return;
+						}
+
+						const selections =
+							checkedAttributes(
+								$scope,
+								name
+							);
+
+						selections[
+							match[1]
+						] =
+							String(
+								$input.val()
+							);
+
+						const available =
+							matrixHasMatch(
+								matrix,
+								selections
+							);
+
+						$input
+							.prop(
+								"disabled",
+								!available
+							);
+
+						$input
+							.closest(".cx-option")
+							.toggleClass(
+								"cx-option-disabled",
+								!available
+							);
+
+						if (
+							!available
+							&& $input.is(":checked")
+						) {
+
+							$input
+								.prop(
+									"checked",
+									false
+								);
+
+							changed = true;
+						}
+					}
+				);
+		}
+	}
+
+
+	/**
 	 * Calculate the lowest minimum quantity among available print options.
 	 */
 	function minimumPrintQuantity(
@@ -412,6 +601,17 @@ window.CX = window.CX || {};
 	$form.on(
 		"change",
 		".cx-attribute-input",
+		function () {
+
+			refreshAvailability(
+				$form
+			);
+		}
+	);
+
+	$form.on(
+		"change",
+		".cx-attribute-input",
 		function (
 			event,
 			meta
@@ -438,6 +638,17 @@ window.CX = window.CX || {};
 	$conf.on(
 		"change",
 		".cx-attribute-input",
+		function () {
+
+			refreshAvailability(
+				$conf
+			);
+		}
+	);
+
+	$conf.on(
+		"change",
+		".cx-attribute-input",
 		function (
 			event,
 			meta
@@ -453,5 +664,15 @@ window.CX = window.CX || {};
 			);
 		}
 	);
+
+
+	/*
+	|--------------------------------------------------------------------------
+	| Initial State
+	|--------------------------------------------------------------------------
+	*/
+
+	refreshAvailability($form);
+	refreshAvailability($conf);
 
 })(jQuery);

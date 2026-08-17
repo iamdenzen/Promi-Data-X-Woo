@@ -1018,6 +1018,15 @@ $is_price_on_request =
 		display: none;
 	}
 
+	.cx-variation-attribute .cx-option.cx-option-disabled {
+		opacity: .35;
+	}
+
+	.cx-variation-attribute .cx-option.cx-option-disabled label {
+		cursor: not-allowed;
+		pointer-events: none;
+	}
+
 	.cx-remove-selection {
 		position: absolute;
 		top: -5px;

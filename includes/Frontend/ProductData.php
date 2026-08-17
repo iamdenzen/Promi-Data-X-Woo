@@ -138,6 +138,32 @@ final class ProductData {
 
 		/*
 		|--------------------------------------------------------------------------
+		| Dead-End Combination
+		|--------------------------------------------------------------------------
+		|
+		| A fully-specified attribute selection (e.g. Color=Red, Size=SM)
+		| that fails to resolve to any variation is a dead-end combination,
+		| not "nothing selected yet" — the frontend's attribute UI is only
+		| supposed to submit once every attribute group has a value. Report
+		| this explicitly instead of silently falling back to the parent
+		| product's SKU/price/tiers, which would be wrong for whatever the
+		| shopper actually picked.
+		*/
+
+		if (
+			! $variation_id
+			&& ! empty( $attributes )
+			&& $product instanceof WC_Product_Variable
+		) {
+
+			return [
+				'invalid_combination' => true,
+			];
+		}
+
+
+		/*
+		|--------------------------------------------------------------------------
 		| Target
 		|--------------------------------------------------------------------------
 		*/
@@ -869,6 +895,86 @@ final class ProductData {
 		}
 
 		return $result;
+	}
+
+
+	/**
+	 * Return the attribute combination actually used by every variation.
+	 *
+	 * Used by the frontend to disable/grey out attribute options that
+	 * cannot resolve to any existing variation (e.g. Color=Red + Size=SM
+	 * when only Red-M and Blue-SM actually exist), rather than letting the
+	 * shopper select a dead-end combination.
+	 *
+	 * @return array<int,array{variation_id:int,attributes:array<string,string>}>
+	 */
+	public function variation_matrix(
+		WC_Product_Variable|int $product
+	): array {
+
+		if ( is_int( $product ) ) {
+
+			$product =
+				wc_get_product(
+					$product
+				);
+		}
+
+		if (
+			! $product instanceof WC_Product_Variable
+		) {
+			return [];
+		}
+
+		$matrix = [];
+
+		foreach (
+			$this->variation_ids(
+				$product
+			) as $variation_id
+		) {
+
+			$variation =
+				wc_get_product(
+					$variation_id
+				);
+
+			if (
+				! $variation instanceof WC_Product_Variation
+			) {
+				continue;
+			}
+
+			$attributes = [];
+
+			foreach (
+				$variation->get_attributes()
+					as $taxonomy => $value
+			) {
+
+				/*
+				 * Match the "attribute_{taxonomy}" input-name convention
+				 * used by variation_attribute_radios() so the frontend can
+				 * compare directly against form field names.
+				 */
+				$attributes[
+					'attribute_'
+					. sanitize_title(
+						$taxonomy
+					)
+				] = (string) $value;
+			}
+
+			$matrix[] = [
+				'variation_id' =>
+					$variation_id,
+
+				'attributes' =>
+					$attributes,
+			];
+		}
+
+		return $matrix;
 	}
 
 

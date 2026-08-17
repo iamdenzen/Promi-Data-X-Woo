@@ -691,6 +691,12 @@ final class Shortcodes {
 			return '';
 		}
 
+		$matrix =
+			$this->product_data
+				->variation_matrix(
+					$product
+				);
+
 		$prefix =
 			sanitize_html_class(
 				$prefix
@@ -700,7 +706,10 @@ final class Shortcodes {
 		ob_start();
 
 		?>
-		<div class="cx-variation-attributes cx-radio-attributes">
+		<div
+			class="cx-variation-attributes cx-radio-attributes"
+			data-variation-matrix="<?php echo esc_attr( wp_json_encode( $matrix ) ); ?>"
+		>
 
 			<?php foreach ( $attributes as $taxonomy => $attribute ) : ?>
 
