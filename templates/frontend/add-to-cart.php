@@ -728,7 +728,7 @@ $is_price_on_request =
 									type="text"
 									id="cx-inquiry-name"
 									name="inquiry_name"
-									required
+									
 								>
 							</p>
 
@@ -741,7 +741,7 @@ $is_price_on_request =
 									type="email"
 									id="cx-inquiry-email"
 									name="inquiry_email"
-									required
+									
 								>
 							</p>
 
