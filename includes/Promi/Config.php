@@ -20,7 +20,7 @@ final class Config {
 	 * Every per-product JSON URL in the feed shares the same base
 	 * (".../{guid}/") that precedes this suffix.
 	 */
-	private const FEED_PATH_SUFFIX = 'import/import.txt';
+	private const FEED_PATH_SUFFIX = 'Import/Import.txt';
 
 	public static function feed_url(): string {
 
