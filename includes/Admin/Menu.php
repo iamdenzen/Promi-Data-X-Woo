@@ -53,6 +53,9 @@ final class Menu {
 	public const PRICING_SLUG =
 		'pdxw-tier-pricing';
 
+	public const PRICING_CALCULATOR_SLUG =
+		'pdxw-pricing-calculator';
+
 	public const PRINTING_SLUG =
 		'pdxw-printing';
 
@@ -88,6 +91,8 @@ final class Menu {
 
 	private PricingPage $pricing_page;
 
+	private PricingCalculatorPage $pricing_calculator_page;
+
 	private PrintingPage $printing_page;
 
 	private MarkupPage $markup_page;
@@ -109,15 +114,17 @@ final class Menu {
 	public function __construct(
 		PromiPages $promi_pages,
 		PricingPage $pricing_page,
+		PricingCalculatorPage $pricing_calculator_page,
 		PrintingPage $printing_page,
 		MarkupPage $markup_page,
 		InquiriesPage $inquiries_page
 	) {
-		$this->promi_pages    = $promi_pages;
-		$this->pricing_page   = $pricing_page;
-		$this->printing_page  = $printing_page;
-		$this->markup_page    = $markup_page;
-		$this->inquiries_page = $inquiries_page;
+		$this->promi_pages             = $promi_pages;
+		$this->pricing_page            = $pricing_page;
+		$this->pricing_calculator_page = $pricing_calculator_page;
+		$this->printing_page           = $printing_page;
+		$this->markup_page             = $markup_page;
+		$this->inquiries_page          = $inquiries_page;
 	}
 
 
@@ -372,6 +379,35 @@ final class Menu {
 
 		/*
 		|--------------------------------------------------------------------------
+		| Pricing Calculator
+		|--------------------------------------------------------------------------
+		*/
+
+		$this->page_hooks[
+			self::PRICING_CALCULATOR_SLUG
+		] =
+			(string)
+			add_submenu_page(
+				self::ROOT_SLUG,
+				__(
+					'Pricing Calculator',
+					'promi-data-x-woo'
+				),
+				__(
+					'Pricing Calculator',
+					'promi-data-x-woo'
+				),
+				self::CAPABILITY,
+				self::PRICING_CALCULATOR_SLUG,
+				[
+					$this->pricing_calculator_page,
+					'render',
+				]
+			);
+
+
+		/*
+		|--------------------------------------------------------------------------
 		| Printing
 		|--------------------------------------------------------------------------
 		*/
@@ -540,6 +576,7 @@ final class Menu {
 			self::IGNORE_SKUS_SLUG,
 			self::IGNORE_RULES_SLUG,
 			self::PRICING_SLUG,
+			self::PRICING_CALCULATOR_SLUG,
 			self::PRINTING_SLUG,
 			self::MARKUP_SLUG,
 			self::INQUIRIES_SLUG,

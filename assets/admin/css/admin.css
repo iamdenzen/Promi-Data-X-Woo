@@ -517,6 +517,79 @@
 
 /*
 |--------------------------------------------------------------------------
+| Pricing Calculator
+|--------------------------------------------------------------------------
+*/
+
+.pdxw-pricing-calculator-details {
+	margin-top: 22px;
+}
+
+.pdxw-pricing-target {
+	margin-bottom: 22px;
+}
+
+.pdxw-pricing-target:last-child {
+	margin-bottom: 0;
+}
+
+.pdxw-pricing-breakdown-table {
+	table-layout: auto;
+}
+
+.pdxw-pricing-breakdown-table td,
+.pdxw-pricing-breakdown-table th {
+	min-width: 100px;
+}
+
+.pdxw-pricing-breakdown-table td:first-child,
+.pdxw-pricing-breakdown-table th:first-child {
+	min-width: 70px;
+}
+
+.pdxw-scenario-badge {
+	display: inline-flex;
+	align-items: center;
+	gap: 6px;
+	padding: 3px 10px;
+	border-radius: 999px;
+	font-size: 12px;
+	font-weight: 600;
+	white-space: nowrap;
+}
+
+.pdxw-scenario-badge::before {
+	content: "";
+	display: inline-block;
+	width: 7px;
+	height: 7px;
+	border-radius: 50%;
+	background: currentColor;
+}
+
+.pdxw-scenario-case-1 {
+	color: var(--pdxw-success);
+	background: #edfaef;
+}
+
+.pdxw-scenario-case-2 {
+	color: #2271b1;
+	background: #eaf3fb;
+}
+
+.pdxw-scenario-case-3 {
+	color: var(--pdxw-warning);
+	background: #fdf3e0;
+}
+
+.pdxw-scenario-unknown {
+	color: var(--pdxw-text-muted);
+	background: var(--pdxw-background-soft);
+}
+
+
+/*
+|--------------------------------------------------------------------------
 | Printing
 |--------------------------------------------------------------------------
 */
@@ -863,7 +936,8 @@ body.pdxw-request-active .pdxw-admin .button.is-busy {
 	.pdxw-print-options-table,
 	.pdxw-print-price-table,
 	.pdxw-print-fees-table,
-	.pdxw-variation-print-options {
+	.pdxw-variation-print-options,
+	.pdxw-pricing-breakdown-table {
 		display: block;
 		overflow-x: auto;
 	}

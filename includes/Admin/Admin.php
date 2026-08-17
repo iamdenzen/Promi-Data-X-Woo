@@ -63,6 +63,8 @@ final class Admin {
 
 	private PricingPage $pricing_page;
 
+	private PricingCalculatorPage $pricing_calculator_page;
+
 	private PrintingPage $printing_page;
 
 	private MarkupPage $markup_page;
@@ -142,6 +144,24 @@ final class Admin {
 
 		/*
 		|--------------------------------------------------------------------------
+		| Pricing Calculator Admin
+		|--------------------------------------------------------------------------
+		|
+		| Read-only diagnostic: shows the exact calculated price for every
+		| quantity tier of a product, and which of the three
+		| CostCalculator scenarios it resolves through. Never writes
+		| pricing data — editing tiers remains PricingPage's job.
+		*/
+
+		$this->pricing_calculator_page =
+			new PricingCalculatorPage(
+				$this->catalog,
+				$this->pricing
+			);
+
+
+		/*
+		|--------------------------------------------------------------------------
 		| Printing Admin
 		|--------------------------------------------------------------------------
 		|
@@ -204,6 +224,7 @@ final class Admin {
 			new Menu(
 				$this->promi_pages,
 				$this->pricing_page,
+				$this->pricing_calculator_page,
 				$this->printing_page,
 				$this->markup_page,
 				$this->inquiries_page
@@ -364,6 +385,8 @@ final class Admin {
 
 		$this->pricing_page->init();
 
+		$this->pricing_calculator_page->init();
+
 		$this->printing_page->init();
 
 		$this->markup_page->init();
@@ -416,6 +439,11 @@ final class Admin {
 
 	public function pricing_page(): PricingPage {
 		return $this->pricing_page;
+	}
+
+
+	public function pricing_calculator_page(): PricingCalculatorPage {
+		return $this->pricing_calculator_page;
 	}
 
 
