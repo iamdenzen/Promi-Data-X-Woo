@@ -3,12 +3,18 @@
 namespace PromiDataXWoo\Mcp\Tools;
 
 use PromiDataXWoo\Pricing\Pricing;
+use WC_Product_Variation;
 use WP_MCP_Server\Tools\Contracts\ToolInterface;
 
 defined( 'ABSPATH' ) || exit;
 
 /**
- * MCP tool exposing calculated quantity-tier prices for a product/variation.
+ * MCP tool exposing calculated quantity-tier prices for exactly one
+ * WooCommerce variation.
+ *
+ * This store defines pricing per variation, never on the parent product,
+ * so both product_id and variation_id are required — there is no
+ * "parent-level" fallback to fall back to.
  *
  * Deliberately returns the fully calculated customer selling price and its
  * effective cost basis (via Pricing\CostCalculator), never Promi's raw
@@ -20,7 +26,7 @@ defined( 'ABSPATH' ) || exit;
  * \WP_MCP_Server\Tools\Contracts\ToolInterface exists, so the "implements"
  * clause below is safe even when the MCP Server framework isn't installed.
  */
-final class GetTieredPricesTool implements ToolInterface {
+final class GetVariationTieredPricesTool implements ToolInterface {
 
 	private Pricing $pricing;
 
@@ -31,12 +37,12 @@ final class GetTieredPricesTool implements ToolInterface {
 
 
 	public function name(): string {
-		return 'pdxw_get_tiered_prices';
+		return 'pdxw_get_variation_tiered_prices';
 	}
 
 
 	public function description(): string {
-		return 'Gets calculated quantity-tier selling prices and their cost basis for a WooCommerce product or variation synced from Promi.';
+		return 'Gets the calculated quantity-tier selling prices and cost basis for exactly one WooCommerce product variation. Both product_id AND variation_id are REQUIRED — this store defines pricing per variation, not on the parent product, so there is no product-level price to fall back to. If you do not already know the variation_id, call pdxw_get_product_variations_tiered_prices first to list every variation of the product with its ID.';
 	}
 
 
@@ -44,7 +50,10 @@ final class GetTieredPricesTool implements ToolInterface {
 
 		return [
 			'type'       => 'object',
-			'required'   => [ 'product_id' ],
+			'required'   => [
+				'product_id',
+				'variation_id',
+			],
 			'properties' => [
 				'product_id'   => [
 					'type'        => 'integer',
@@ -52,8 +61,7 @@ final class GetTieredPricesTool implements ToolInterface {
 				],
 				'variation_id' => [
 					'type'        => 'integer',
-					'description' => 'Optional WooCommerce variation ID. Omit for a simple product, or for a variable product\'s own parent-level tiers.',
-					'default'     => 0,
+					'description' => 'WooCommerce variation ID. Required — pricing is defined per variation. Look it up via pdxw_get_product_variations_tiered_prices if unknown.',
 				],
 			],
 		];
@@ -95,10 +103,22 @@ final class GetTieredPricesTool implements ToolInterface {
 			);
 		}
 
-		if ( ! wc_get_product( $product_id ) ) {
+		if ( ! $variation_id ) {
 
 			return self::error_response(
-				'Product not found.'
+				'Missing or invalid variation_id. This tool requires a specific variation — use pdxw_get_product_variations_tiered_prices to list variation IDs for a product.'
+			);
+		}
+
+		$variation = wc_get_product( $variation_id );
+
+		if (
+			! $variation instanceof WC_Product_Variation
+			|| $variation->get_parent_id() !== $product_id
+		) {
+
+			return self::error_response(
+				'variation_id does not belong to product_id.'
 			);
 		}
 
@@ -127,17 +147,11 @@ final class GetTieredPricesTool implements ToolInterface {
 
 	/**
 	 * Calculated selling price + effective cost basis for every configured
-	 * quantity tier belonging to exactly this product/variation.
-	 *
-	 * $variation_id is used literally (0 means "the parent product's own
-	 * tiers", not "every variation combined") so the returned cost basis
-	 * always matches the same target the price was calculated against —
-	 * mixing tiers from different variations into one calculation would
-	 * silently produce wrong numbers.
+	 * quantity tier belonging to exactly this variation.
 	 */
 	public function tiers_for(
 		int $product_id,
-		int $variation_id = 0
+		int $variation_id
 	): array {
 
 		$quantities = $this->pricing->quantities(

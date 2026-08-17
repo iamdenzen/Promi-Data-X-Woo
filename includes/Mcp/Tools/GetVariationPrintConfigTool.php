@@ -3,12 +3,17 @@
 namespace PromiDataXWoo\Mcp\Tools;
 
 use PromiDataXWoo\Printing\Printing;
+use WC_Product_Variation;
 use WP_MCP_Server\Tools\Contracts\ToolInterface;
 
 defined( 'ABSPATH' ) || exit;
 
 /**
- * MCP tool exposing print positions/options/prices/fees for a product.
+ * MCP tool exposing print positions/options/prices/fees for exactly one
+ * WooCommerce variation.
+ *
+ * This store defines print configuration per variation, never on the
+ * parent product, so both product_id and variation_id are required.
  *
  * Reuses Printing\Configurator::get_config(), the same source the product
  * page and configurator UI render from, so prices and fees are already run
@@ -18,7 +23,7 @@ defined( 'ABSPATH' ) || exit;
  * \WP_MCP_Server\Tools\Contracts\ToolInterface exists, so the "implements"
  * clause below is safe even when the MCP Server framework isn't installed.
  */
-final class GetPrintConfigTool implements ToolInterface {
+final class GetVariationPrintConfigTool implements ToolInterface {
 
 	private Printing $printing;
 
@@ -29,12 +34,12 @@ final class GetPrintConfigTool implements ToolInterface {
 
 
 	public function name(): string {
-		return 'pdxw_get_print_config';
+		return 'pdxw_get_variation_print_config';
 	}
 
 
 	public function description(): string {
-		return 'Gets available print positions, decoration options, and their calculated selling prices and fees for a WooCommerce product or variation.';
+		return 'Gets available print positions, decoration options, and their calculated selling prices and fees for exactly one WooCommerce product variation. Both product_id AND variation_id are REQUIRED — this store defines print configuration per variation, not on the parent product, so there is no product-level configuration to fall back to. If you do not already know the variation_id, call pdxw_get_product_variations_print_config first to list every variation of the product with its ID.';
 	}
 
 
@@ -42,7 +47,10 @@ final class GetPrintConfigTool implements ToolInterface {
 
 		return [
 			'type'       => 'object',
-			'required'   => [ 'product_id' ],
+			'required'   => [
+				'product_id',
+				'variation_id',
+			],
 			'properties' => [
 				'product_id'   => [
 					'type'        => 'integer',
@@ -50,8 +58,7 @@ final class GetPrintConfigTool implements ToolInterface {
 				],
 				'variation_id' => [
 					'type'        => 'integer',
-					'description' => 'Optional WooCommerce variation ID.',
-					'default'     => 0,
+					'description' => 'WooCommerce variation ID. Required — print configuration is defined per variation. Look it up via pdxw_get_product_variations_print_config if unknown.',
 				],
 			],
 		];
@@ -93,10 +100,22 @@ final class GetPrintConfigTool implements ToolInterface {
 			);
 		}
 
-		if ( ! wc_get_product( $product_id ) ) {
+		if ( ! $variation_id ) {
 
 			return self::error_response(
-				'Product not found.'
+				'Missing or invalid variation_id. This tool requires a specific variation — use pdxw_get_product_variations_print_config to list variation IDs for a product.'
+			);
+		}
+
+		$variation = wc_get_product( $variation_id );
+
+		if (
+			! $variation instanceof WC_Product_Variation
+			|| $variation->get_parent_id() !== $product_id
+		) {
+
+			return self::error_response(
+				'variation_id does not belong to product_id.'
 			);
 		}
 
@@ -124,15 +143,15 @@ final class GetPrintConfigTool implements ToolInterface {
 
 
 	/**
-	 * Print positions/options for one product or variation.
+	 * Print positions/options for exactly this variation.
 	 *
-	 * Configurator::get_config() already falls back to parent-level
-	 * positions when a variation has none of its own, so that behavior is
-	 * inherited here unchanged.
+	 * Configurator::get_config() falls back to parent-level positions when
+	 * a variation has none of its own; that behavior is inherited here
+	 * unchanged.
 	 */
 	public function config_for(
 		int $product_id,
-		int $variation_id = 0
+		int $variation_id
 	): array {
 
 		return $this->printing
