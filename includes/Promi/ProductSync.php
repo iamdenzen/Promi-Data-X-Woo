@@ -32,6 +32,39 @@ final class ProductSync {
 
 
 	/**
+	 * Coerce a raw Promi JSON field into a string.
+	 *
+	 * Promi occasionally returns a scalar field as an array instead of a
+	 * string (e.g. "Description": [] rather than ""). WordPress core
+	 * functions such as sanitize_text_field() and wp_kses_post() require a
+	 * string argument and fatal (TypeError) when given an array, so every
+	 * raw field pulled straight from the feed must be normalized before it
+	 * reaches them. Arrays of scalars are flattened into text; anything
+	 * else that isn't already scalar becomes ''.
+	 *
+	 * @param mixed $value
+	 */
+	private function text_field( $value ): string {
+
+		if ( is_array( $value ) ) {
+
+			$value = implode(
+				"\n\n",
+				array_filter(
+					array_map(
+						static fn( $v ) => is_scalar( $v ) ? (string) $v : '',
+						$value
+					),
+					static fn( $v ) => '' !== $v
+				)
+			);
+		}
+
+		return is_scalar( $value ) ? (string) $value : '';
+	}
+
+
+	/**
 	 * Create or update a Promi product.
 	 *
 	 * @return int WooCommerce parent product ID.
@@ -42,7 +75,7 @@ final class ProductSync {
 	): int {
 
 		$parent_sku = sanitize_text_field(
-			$data['Sku'] ?? ''
+			$this->text_field( $data['Sku'] ?? '' )
 		);
 
 		if ( '' === $parent_sku ) {
@@ -349,15 +382,15 @@ final class ProductSync {
 			?? [];
 
 		$title = sanitize_text_field(
-			$details['Name'] ?? ''
+			$this->text_field( $details['Name'] ?? '' )
 		);
 
 		$short_description = wp_kses_post(
-			$details['ShortDescription'] ?? ''
+			$this->text_field( $details['ShortDescription'] ?? '' )
 		);
 
 		$description = wp_kses_post(
-			$details['Description'] ?? ''
+			$this->text_field( $details['Description'] ?? '' )
 		);
 
 		if ( '' !== $title ) {
@@ -476,7 +509,7 @@ final class ProductSync {
 		 * taxonomy — NOT a separate manufacturer taxonomy.
 		 */
 		$brand_name = sanitize_text_field(
-			$other['Brand'] ?? ''
+			$this->text_field( $other['Brand'] ?? '' )
 		);
 
 		if ( $brand_name ) {
@@ -493,7 +526,7 @@ final class ProductSync {
 		 * not directly from its textual category name.
 		 */
 		$category_key = sanitize_text_field(
-			$other['Category'] ?? ''
+			$this->text_field( $other['Category'] ?? '' )
 		);
 
 		if ( $category_key ) {
@@ -510,7 +543,7 @@ final class ProductSync {
 			$product->update_meta_data(
 				'web_shop_information',
 				wp_kses_post(
-					$details['WebShopInformation']
+					$this->text_field( $details['WebShopInformation'] )
 				)
 			);
 		}
@@ -521,7 +554,7 @@ final class ProductSync {
 			$product->update_meta_data(
 				'country_of_origin',
 				sanitize_text_field(
-					$other['CountryOfOrigin']
+					$this->text_field( $other['CountryOfOrigin'] )
 				)
 			);
 		}
@@ -582,7 +615,7 @@ final class ProductSync {
 			if ( empty( $fields ) ) {
 
 				$sku = sanitize_text_field(
-					$child['Sku'] ?? ''
+					$this->text_field( $child['Sku'] ?? '' )
 				);
 
 				$attributes['Variante'][] =
@@ -594,31 +627,30 @@ final class ProductSync {
 			foreach ( $fields as $field ) {
 
 				$name = sanitize_text_field(
-					$field['ConfigurationName']
-					?? ''
+					$this->text_field( $field['ConfigurationName'] ?? '' )
 				);
 
 				$label = sanitize_text_field(
-					$field['ConfigurationNameTranslated']
-					?? $name
+					$this->text_field( $field['ConfigurationNameTranslated'] ?? $name )
 				);
 
-				$value = $field['ConfigurationValue']
-					?? '';
+				$value = $this->text_field(
+					$field['ConfigurationValue'] ?? ''
+				);
 
 				if (
 					'' === $label
-					|| '' === (string) $value
+					|| '' === $value
 				) {
 					continue;
 				}
 
 				$value = 'Color' === $name
 					? $this->catalog->attributes()->normalize_color(
-						(string) $value
+						$value
 					)
 					: sanitize_text_field(
-						(string) $value
+						$value
 					);
 
 				$attributes[ $label ][] =
@@ -701,7 +733,7 @@ final class ProductSync {
 		foreach ( $children as $child ) {
 
 			$sku = sanitize_text_field(
-				$child['Sku'] ?? ''
+				$this->text_field( $child['Sku'] ?? '' )
 			);
 
 			if ( $sku ) {
@@ -722,7 +754,7 @@ final class ProductSync {
 		foreach ( $children as $child ) {
 
 			$sku = sanitize_text_field(
-				$child['Sku'] ?? ''
+				$this->text_field( $child['Sku'] ?? '' )
 			);
 
 			if ( ! $sku ) {
@@ -884,18 +916,15 @@ final class ProductSync {
 			foreach ( $fields as $field ) {
 
 				$name = sanitize_text_field(
-					$field['ConfigurationName']
-					?? ''
+					$this->text_field( $field['ConfigurationName'] ?? '' )
 				);
 
 				$label = sanitize_text_field(
-					$field['ConfigurationNameTranslated']
-					?? $name
+					$this->text_field( $field['ConfigurationNameTranslated'] ?? $name )
 				);
 
-				$value = (string) (
-					$field['ConfigurationValue']
-					?? ''
+				$value = $this->text_field(
+					$field['ConfigurationValue'] ?? ''
 				);
 
 				if (
