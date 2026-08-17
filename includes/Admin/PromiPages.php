@@ -790,6 +790,23 @@ final class PromiPages {
 						?>
 					</button>
 
+					<button
+						type="button"
+						id="pdxw-process-sku-now-button"
+						class="button button-primary"
+						title="<?php echo esc_attr__(
+							'Add to the queue (if not already there) and process immediately, instead of waiting for the next scheduled worker run.',
+							'promi-data-x-woo'
+						); ?>"
+					>
+						<?php
+						echo esc_html__(
+							'Process Now',
+							'promi-data-x-woo'
+						);
+						?>
+					</button>
+
 				</p>
 
 			</div>
@@ -1575,6 +1592,28 @@ final class PromiPages {
 											?>
 										</button>
 
+										<button
+											type="button"
+											class="button button-small pdxw-process-sku-now"
+											data-sku="<?php echo esc_attr(
+												$sku
+											); ?>"
+											data-queue-action="<?php echo esc_attr(
+												$row_action
+											); ?>"
+											title="<?php echo esc_attr__(
+												'Requeue and process immediately, instead of waiting for the next scheduled worker run.',
+												'promi-data-x-woo'
+											); ?>"
+										>
+											<?php
+											echo esc_html__(
+												'Process Now',
+												'promi-data-x-woo'
+											);
+											?>
+										</button>
+
 									<?php elseif (
 										Queue::STATUS_RUNNING
 										=== $row_status
@@ -1595,6 +1634,28 @@ final class PromiPages {
 											'promi-data-x-woo'
 										);
 										?>
+
+										<button
+											type="button"
+											class="button button-small pdxw-process-sku-now"
+											data-sku="<?php echo esc_attr(
+												$sku
+											); ?>"
+											data-queue-action="<?php echo esc_attr(
+												$row_action
+											); ?>"
+											title="<?php echo esc_attr__(
+												'Process this SKU immediately, bypassing its scheduled wait/retry delay.',
+												'promi-data-x-woo'
+											); ?>"
+										>
+											<?php
+											echo esc_html__(
+												'Process Now',
+												'promi-data-x-woo'
+											);
+											?>
+										</button>
 
 									<?php endif; ?>
 

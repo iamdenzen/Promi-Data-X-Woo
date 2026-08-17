@@ -55,6 +55,30 @@ final class Worker {
 		}
 	}
 
+	/**
+	 * Process one specific SKU's pending queue job immediately, bypassing
+	 * its retry backoff delay and the normal priority-ordered batch
+	 * claim() used by run().
+	 *
+	 * @return array{found:bool,success?:bool}
+	 */
+	public function process_now( string $sku ): array {
+
+		$job = $this->queue->claim_sku( $sku );
+
+		if ( ! $job ) {
+
+			return [
+				'found' => false,
+			];
+		}
+
+		return [
+			'found'   => true,
+			'success' => $this->process( $job ),
+		];
+	}
+
 	public function process(
 		object $job
 	): bool {

@@ -360,6 +360,26 @@ final class Promi {
 
 
 	/**
+	 * Process one specific SKU's queued job immediately, bypassing its
+	 * retry backoff delay and the wait for the next scheduled worker
+	 * tick.
+	 *
+	 * @return array{found:bool,success?:bool}
+	 */
+	public function process_sku_now( string $sku ): array {
+
+		if ( $this->is_paused() ) {
+
+			return [
+				'found' => false,
+			];
+		}
+
+		return $this->worker->process_now( $sku );
+	}
+
+
+	/**
 	 * Run one image batch immediately.
 	 */
 	public function run_images(): void {

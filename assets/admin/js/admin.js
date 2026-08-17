@@ -1355,6 +1355,152 @@
 	}
 
 
+	/**
+	 * Process one SKU's queue job immediately (bypassing its retry
+	 * backoff delay and the wait for the next scheduled worker tick).
+	 *
+	 * If nothing is currently pending for this SKU, the backend enqueues
+	 * it first using queueAction, then processes it — so this also works
+	 * as "add and process now" / "requeue and process now".
+	 */
+	function processSkuNow(
+		sku,
+		queueAction,
+		$button = null
+	) {
+
+		sku =
+			String(
+				sku
+				|| ""
+			)
+				.trim();
+
+
+		queueAction =
+			String(
+				queueAction
+					|| "update"
+			)
+				.trim();
+
+
+		if (!sku) {
+
+			dashboardMessage(
+				"Please provide a Promi SKU.",
+				"warning"
+			);
+
+
+			return $.Deferred()
+				.reject()
+				.promise();
+		}
+
+
+		if ($button?.length) {
+
+			loading(
+				$button,
+				true,
+				text(
+					"processing",
+					"Processing…"
+				)
+			);
+		}
+
+
+		return request(
+			"process_sku_now",
+			{
+				sku,
+				queue_action:
+					queueAction
+			}
+		)
+			.done(
+				data => {
+
+					renderQueue(
+						data.queue
+							|| {}
+					);
+
+
+					dashboardMessage(
+						data.message
+							|| text(
+								"done",
+								"Done."
+							),
+						"success"
+					);
+				}
+			)
+			.fail(
+				error => {
+
+					dashboardMessage(
+						errorMessage(
+							error
+						),
+						"error"
+					);
+				}
+			)
+			.always(
+				() => {
+
+					if ($button?.length) {
+
+						loading(
+							$button,
+							false
+						);
+					}
+				}
+			);
+	}
+
+
+	$(document).on(
+		"click",
+		"#pdxw-process-sku-now-button",
+		function () {
+
+			const $button =
+				$(this);
+
+
+			const sku =
+				$("#pdxw-process-sku")
+					.val();
+
+
+			const action =
+				$("#pdxw-process-action")
+					.val()
+					|| "update";
+
+
+			processSkuNow(
+				sku,
+				action,
+				$button
+			)
+				.done(
+					() => {
+
+						$("#pdxw-process-sku")
+							.val("");
+					}
+				);
+		}
+	);
+
+
 	$(document).on(
 		"click",
 		"#pdxw-process-sku-button",
@@ -1497,6 +1643,82 @@
 								false
 							);
 						}
+					}
+				);
+		}
+	);
+
+
+	/*
+	|--------------------------------------------------------------------------
+	| Queue Table — Process Now
+	|--------------------------------------------------------------------------
+	|
+	| Unlike Requeue (which just schedules the job for the next worker
+	| tick), this processes the row's SKU immediately and reloads the
+	| page so the row reflects the completed job's real status/error.
+	*/
+
+	$(document).on(
+		"click",
+		".pdxw-process-sku-now",
+		function () {
+
+			const $button =
+				$(this);
+
+
+			const sku =
+				$button.data(
+					"sku"
+				);
+
+
+			const queueAction =
+				$button.data(
+					"queue-action"
+				)
+				|| "update";
+
+
+			loading(
+				$button,
+				true,
+				text(
+					"processing",
+					"Processing…"
+				)
+			);
+
+
+			request(
+				"process_sku_now",
+				{
+					sku,
+					queue_action:
+						queueAction
+				}
+			)
+				.done(
+					() => {
+
+						window.location.reload();
+					}
+				)
+				.fail(
+					error => {
+
+						window.alert(
+							errorMessage(
+								error
+							)
+						);
+
+
+						loading(
+							$button,
+							false
+						);
 					}
 				);
 		}

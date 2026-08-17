@@ -69,6 +69,9 @@ final class Ajax {
 	public const ACTION_PROCESS_SKU =
 		'pdxw_promi_process_sku';
 
+	public const ACTION_PROCESS_SKU_NOW =
+		'pdxw_promi_process_sku_now';
+
 	public const ACTION_ADD_IGNORE_SKU =
 		'pdxw_promi_add_ignore_sku';
 
@@ -152,6 +155,11 @@ final class Ajax {
 		$this->register_action(
 			self::ACTION_PROCESS_SKU,
 			'process_sku'
+		);
+
+		$this->register_action(
+			self::ACTION_PROCESS_SKU_NOW,
+			'process_sku_now'
 		);
 
 		$this->register_action(
@@ -763,6 +771,223 @@ final class Ajax {
 
 				'action' =>
 					$action,
+
+				'queue' =>
+					$this->promi
+						->queue()
+						->stats(),
+			]
+		);
+	}
+
+
+	/**
+	 * Process one specific SKU's queued job right now, bypassing its
+	 * retry backoff delay and the wait for the next scheduled worker
+	 * tick.
+	 *
+	 * If the SKU has no active (pending) job — e.g. its last run already
+	 * finished or permanently failed — it is enqueued first (using
+	 * queue_action, defaulting to "update") and then processed
+	 * immediately, so this also works as "requeue and run now" for
+	 * done/failed rows.
+	 */
+	public function process_sku_now(): void {
+
+		$this->authorize();
+
+
+		$sku =
+			$this->request_string(
+				'sku'
+			);
+
+
+		if ( '' === $sku ) {
+
+			wp_send_json_error(
+				[
+					'message' =>
+						__(
+							'Please provide a Promi SKU.',
+							'promi-data-x-woo'
+						),
+				],
+				400
+			);
+		}
+
+
+		if (
+			IgnoreRules::is_sku_ignored(
+				$sku
+			)
+		) {
+
+			wp_send_json_error(
+				[
+					'message' =>
+						__(
+							'This SKU is currently excluded from Promi synchronization.',
+							'promi-data-x-woo'
+						),
+				],
+				409
+			);
+		}
+
+
+		if (
+			$this->promi
+				->is_paused()
+		) {
+
+			wp_send_json_error(
+				[
+					'message' =>
+						__(
+							'Promi synchronization is currently paused.',
+							'promi-data-x-woo'
+						),
+				],
+				409
+			);
+		}
+
+
+		$action =
+			sanitize_key(
+				$this->request_string(
+					'queue_action',
+					''
+				)
+			);
+
+		if (
+			! in_array(
+				$action,
+				[
+					Queue::ACTION_CREATE,
+					Queue::ACTION_UPDATE,
+					Queue::ACTION_DISABLE,
+				],
+				true
+			)
+		) {
+			$action = '';
+		}
+
+
+		try {
+
+			$result =
+				$this->promi
+					->process_sku_now(
+						$sku
+					);
+
+			/*
+			 * Nothing pending for this SKU yet — enqueue it (only when a
+			 * valid action was supplied) and try once more.
+			 */
+			if (
+				! $result['found']
+				&& '' !== $action
+			) {
+
+				if (
+					! $this->promi
+						->enqueue(
+							$sku,
+							$action
+						)
+				) {
+
+					wp_send_json_error(
+						[
+							'message' =>
+								__(
+									'The SKU could not be added to the Promi queue.',
+									'promi-data-x-woo'
+								),
+						],
+						500
+					);
+				}
+
+				$result =
+					$this->promi
+						->process_sku_now(
+							$sku
+						);
+			}
+
+		} catch ( \Throwable $e ) {
+
+			$this->send_exception(
+				$e,
+				'The SKU could not be processed.'
+			);
+		}
+
+
+		if ( ! $result['found'] ) {
+
+			wp_send_json_error(
+				[
+					'message' =>
+						sprintf(
+							/* translators: %s: Promi SKU. */
+							__(
+								'No pending queue job was found for SKU %s.',
+								'promi-data-x-woo'
+							),
+							$sku
+						),
+				],
+				404
+			);
+		}
+
+
+		if ( empty( $result['success'] ) ) {
+
+			wp_send_json_error(
+				[
+					'message' =>
+						sprintf(
+							/* translators: %s: Promi SKU. */
+							__(
+								'Processing SKU %s failed. Check the queue for the error.',
+								'promi-data-x-woo'
+							),
+							$sku
+						),
+
+					'queue' =>
+						$this->promi
+							->queue()
+							->stats(),
+				],
+				500
+			);
+		}
+
+
+		wp_send_json_success(
+			[
+				'message' =>
+					sprintf(
+						/* translators: %s: Promi SKU. */
+						__(
+							'SKU %s was processed successfully.',
+							'promi-data-x-woo'
+						),
+						$sku
+					),
+
+				'sku' =>
+					$sku,
 
 				'queue' =>
 					$this->promi

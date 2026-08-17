@@ -255,6 +255,100 @@ final class Queue {
 	}
 
 	/**
+	 * Atomically claim one specific pending job by SKU, bypassing its
+	 * available_at retry delay and the batch priority ordering claim()
+	 * uses.
+	 *
+	 * Used by the admin "Process Now" action so a specific queued SKU can
+	 * be forced to run immediately instead of waiting for the next
+	 * scheduled worker tick (and any backoff delay left over from a
+	 * previous failed attempt).
+	 *
+	 * Returns null when no pending job exists for this SKU, including
+	 * when another worker claims it in the race between the SELECT and
+	 * the UPDATE below.
+	 */
+	public function claim_sku( string $sku ): ?object {
+
+		global $wpdb;
+
+		$sku = trim( $sku );
+
+		if ( '' === $sku ) {
+			return null;
+		}
+
+		$this->release_stale_jobs();
+
+		$table = Database::table( 'promi_queue' );
+		$now   = current_time( 'mysql' );
+
+		$id = $wpdb->get_var(
+			$wpdb->prepare(
+				"SELECT id
+				FROM {$table}
+				WHERE sku = %s
+				AND status = %s
+				ORDER BY id DESC
+				LIMIT 1",
+				$sku,
+				self::STATUS_PENDING
+			)
+		);
+
+		if ( ! $id ) {
+			return null;
+		}
+
+		$token = wp_generate_uuid4();
+
+		/**
+		 * Only claim if it is still pending — guards against a race with
+		 * the scheduled worker cron (or another admin click) claiming
+		 * the same row concurrently.
+		 */
+		$claimed = $wpdb->query(
+			$wpdb->prepare(
+				"UPDATE {$table}
+				SET
+					status = %s,
+					claim_token = %s,
+					claimed_at = %s,
+					last_attempt = %s,
+					attempts = attempts + 1,
+					updated_at = %s
+				WHERE id = %d
+				AND status = %s",
+				self::STATUS_RUNNING,
+				$token,
+				$now,
+				$now,
+				$now,
+				(int) $id,
+				self::STATUS_PENDING
+			)
+		);
+
+		if ( ! $claimed ) {
+			return null;
+		}
+
+		$job = $wpdb->get_row(
+			$wpdb->prepare(
+				"SELECT *
+				FROM {$table}
+				WHERE id = %d",
+				(int) $id
+			)
+		);
+
+		return $job instanceof \stdClass
+			? $job
+			: null;
+	}
+
+
+	/**
 	 * Mark a job complete.
 	 */
 	public function complete( int $job_id ): void {
