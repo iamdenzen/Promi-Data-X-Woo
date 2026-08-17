@@ -878,25 +878,48 @@ final class RestController {
 		}
 
 
-		$deleted =
+		/*
+		|--------------------------------------------------------------------------
+		| Delete Every Rule Type
+		|--------------------------------------------------------------------------
+		|
+		| Each delete() must run unconditionally — MarkupRepository::delete()
+		| returns true even when zero rows matched (wpdb->delete() returns
+		| an integer, not false, for "nothing to delete"). Chaining these
+		| with || would short-circuit after the first call (almost always
+		| TYPE_PRINT_OPTION, which rarely has a row since save_print_option()
+		| only ever writes the split PRICE/FEE types), silently leaving the
+		| real override rows in place.
+		*/
+
+		$deleted_legacy =
 			$this->pricing
 				->markup_repository()
 				->delete(
 					MarkupRepository::TYPE_PRINT_OPTION,
 					$id
-				)
-			|| $this->pricing
+				);
+
+		$deleted_price =
+			$this->pricing
 				->markup_repository()
 				->delete(
 					MarkupRepository::TYPE_PRINT_OPTION_PRICE,
 					$id
-				)
-			|| $this->pricing
+				);
+
+		$deleted_fee =
+			$this->pricing
 				->markup_repository()
 				->delete(
 					MarkupRepository::TYPE_PRINT_OPTION_FEE,
 					$id
 				);
+
+		$deleted =
+			$deleted_legacy
+			|| $deleted_price
+			|| $deleted_fee;
 
 		if ( ! $deleted ) {
 			return new \WP_Error(

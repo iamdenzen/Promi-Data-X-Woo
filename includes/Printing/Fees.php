@@ -181,7 +181,7 @@ final class Fees {
 			) {
 
 				$this->debug_log(
-					sprintf(
+					fn () => sprintf(
 						'fee "%s" skipped for option #%d: requirement not met (requirement=%s, context=%s)',
 						(string) ( $fee->fee_label ?? '' ),
 						$option_id,
@@ -229,7 +229,7 @@ final class Fees {
 			if ( null === $value ) {
 
 				$this->debug_log(
-					sprintf(
+					fn () => sprintf(
 						'fee "%s" skipped for option #%d: no usable purchase_amount or amount',
 						(string) ( $fee->fee_label ?? '' ),
 						$option_id
@@ -1034,9 +1034,15 @@ final class Fees {
 	 * Only active when WP_DEBUG is enabled, so this never runs on a
 	 * production site unless the site owner has already turned on
 	 * debug logging.
+	 *
+	 * Takes a closure rather than a pre-built string: this runs inside
+	 * the cart/checkout/product-page pricing hot path (once per fee row,
+	 * per print position, per pricing calculation), so the sprintf()/
+	 * wp_json_encode() cost of building the message must only be paid
+	 * when WP_DEBUG is actually on, not discarded on every request.
 	 */
 	private function debug_log(
-		string $message
+		callable $message
 	): void {
 
 		if (
@@ -1047,7 +1053,7 @@ final class Fees {
 		}
 
 		error_log(
-			'[PromiDataXWoo\\Printing\\Fees] ' . $message
+			'[PromiDataXWoo\\Printing\\Fees] ' . $message()
 		);
 	}
 }

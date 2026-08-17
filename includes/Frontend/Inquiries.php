@@ -127,12 +127,22 @@ final class Inquiries {
 
 		$id = (int) $wpdb->insert_id;
 
-		$inquiry = self::get( $id );
-
-		if ( $inquiry ) {
-
-			self::notify_admin( $inquiry );
-		}
+		/*
+		 * Notify from the values already validated/sanitized above rather
+		 * than re-reading the row we just inserted — this endpoint can
+		 * see bursty traffic (e.g. a marketing email driving quote
+		 * requests), so avoid a redundant SELECT on every submission.
+		 */
+		self::notify_admin(
+			[
+				'product_id' => $product_id,
+				'name'       => $name,
+				'email'      => $email,
+				'phone'      => $phone,
+				'quantity'   => $quantity,
+				'message'    => $message,
+			]
+		);
 
 		return $id;
 	}
@@ -385,8 +395,14 @@ final class Inquiries {
 	 * the configurable Promi import notification list (Promi\Config) —
 	 * inquiries are a separate, customer-facing concern from Promi import
 	 * health.
+	 *
+	 * Takes the already-sanitized submission fields directly (not a
+	 * re-fetched DB row) — every field notify_admin() needs was already
+	 * validated in submit() before the insert.
+	 *
+	 * @param array{product_id:int,name:string,email:string,phone:string,quantity:int,message:string} $inquiry
 	 */
-	private static function notify_admin( object $inquiry ): void {
+	private static function notify_admin( array $inquiry ): void {
 
 		$to = get_option( 'admin_email' );
 
@@ -396,10 +412,10 @@ final class Inquiries {
 
 		$product_line = '';
 
-		if ( ! empty( $inquiry->product_id ) ) {
+		if ( ! empty( $inquiry['product_id'] ) ) {
 
 			$product = function_exists( 'wc_get_product' )
-				? wc_get_product( (int) $inquiry->product_id )
+				? wc_get_product( (int) $inquiry['product_id'] )
 				: null;
 
 			if ( $product ) {
@@ -407,7 +423,7 @@ final class Inquiries {
 				$product_line = sprintf(
 					"%s\n%s\n\n",
 					$product->get_name(),
-					(string) get_edit_post_link( (int) $inquiry->product_id, '' )
+					(string) get_edit_post_link( (int) $inquiry['product_id'], '' )
 				);
 			}
 		}
@@ -422,15 +438,15 @@ final class Inquiries {
 			"%s%s: %s\n%s: %s\n%s: %s\n%s: %d\n\n%s:\n%s\n",
 			$product_line,
 			__( 'Name', 'promi-data-x-woo' ),
-			$inquiry->name,
+			$inquiry['name'],
 			__( 'Email', 'promi-data-x-woo' ),
-			$inquiry->email,
+			$inquiry['email'],
 			__( 'Phone', 'promi-data-x-woo' ),
-			$inquiry->phone ? $inquiry->phone : '—',
+			$inquiry['phone'] ? $inquiry['phone'] : '—',
 			__( 'Quantity', 'promi-data-x-woo' ),
-			(int) $inquiry->quantity,
+			(int) $inquiry['quantity'],
 			__( 'Message', 'promi-data-x-woo' ),
-			$inquiry->message ? $inquiry->message : '—'
+			$inquiry['message'] ? $inquiry['message'] : '—'
 		);
 
 		wp_mail(

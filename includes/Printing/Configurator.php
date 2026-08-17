@@ -582,11 +582,21 @@ final class Configurator {
 			 * rules used by the cart, so the product page shows the
 			 * actual customer-facing amount rather than Promi's raw
 			 * selling-side figure.
+			 *
+			 * A purchase_amount of exactly 0 is a real cost basis (a
+			 * legitimately free fee) and must not be treated the same as
+			 * "not set" — mirrors Fees::fee_value()'s null/unset/
+			 * empty-string check rather than a truthiness check, so this
+			 * agrees with what the cart actually charges.
 			 */
-			$cost_basis =
+			$has_purchase_amount =
 				isset( $fee->purchase_amount )
-				&& is_numeric( $fee->purchase_amount )
-				&& (float) $fee->purchase_amount > 0
+				&& null !== $fee->purchase_amount
+				&& '' !== (string) $fee->purchase_amount
+				&& is_numeric( $fee->purchase_amount );
+
+			$cost_basis =
+				$has_purchase_amount
 					? (float) $fee->purchase_amount
 					: (float) $fee->amount;
 

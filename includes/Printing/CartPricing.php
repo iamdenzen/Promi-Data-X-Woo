@@ -2,6 +2,8 @@
 
 namespace PromiDataXWoo\Printing;
 
+use PromiDataXWoo\Pricing\CartPricing as PricingCartPricing;
+
 defined( 'ABSPATH' ) || exit;
 
 /**
@@ -436,55 +438,19 @@ final class CartPricing {
 		array $selections
 	): array {
 
-		$calculator_selections =
-			$this->to_calculator_selections(
-				$selections
-			);
-
-		if ( empty( $calculator_selections ) ) {
-			return $data;
-		}
-
-		$product_id =
-			absint(
-				$cart_item['product_id']
-					?? 0
-			);
-
-		$variation_id =
-			absint(
-				$cart_item['variation_id']
-					?? 0
-			);
-
-		$quantity =
-			max(
-				1,
-				absint(
-					$cart_item['quantity']
-						?? 1
-				)
-			);
-
-		$breakdown =
-			$this->calculator
-				->calculate_breakdown(
-					$calculator_selections,
-					[
-						'product_id' =>
-							$product_id,
-
-						'variation_id' =>
-							$variation_id,
-
-						'quantity' =>
-							$quantity,
-					]
-				);
-
 		$fees =
-			$breakdown['fee_breakdown']
-				?? [];
+			$this->stored_fee_breakdown(
+				$cart_item
+			);
+
+		if ( null === $fees ) {
+
+			$fees =
+				$this->recalculate_fee_breakdown(
+					$cart_item,
+					$selections
+				);
+		}
 
 		if ( empty( $fees ) ) {
 			return $data;
@@ -536,6 +502,108 @@ final class CartPricing {
 		}
 
 		return $data;
+	}
+
+
+	/**
+	 * Read the fee breakdown Pricing\CartPricing already computed and
+	 * stored on this cart item during price calculation.
+	 *
+	 * woocommerce_before_calculate_totals (where Pricing\CartPricing
+	 * calculates and stores the breakdown) always runs before cart/
+	 * checkout templates render cart item data, so this is normally
+	 * populated by the time display_cart_data() fires. Reusing it avoids
+	 * running the whole cost/markup calculation a second time on every
+	 * cart render, and — more importantly — avoids having two
+	 * independently-computed fee amounts that could drift apart if
+	 * pricing config changes between add-to-cart and a later render.
+	 *
+	 * Returns null when not yet available, signalling the caller to fall
+	 * back to a fresh calculation instead of silently showing nothing.
+	 */
+	private function stored_fee_breakdown(
+		array $cart_item
+	): ?array {
+
+		$breakdown =
+			$cart_item[
+				PricingCartPricing::BREAKDOWN_KEY
+			] ?? null;
+
+		if ( ! is_array( $breakdown ) ) {
+			return null;
+		}
+
+		$fee_breakdown =
+			$breakdown['fee_breakdown']
+				?? null;
+
+		return is_array( $fee_breakdown )
+			? $fee_breakdown
+			: null;
+	}
+
+
+	/**
+	 * Recalculate the fee breakdown from scratch.
+	 *
+	 * Fallback only, used when Pricing\CartPricing hasn't run yet for
+	 * this cart item in the current request (e.g. an unusual render path
+	 * that displays cart item data before totals are calculated).
+	 */
+	private function recalculate_fee_breakdown(
+		array $cart_item,
+		array $selections
+	): array {
+
+		$calculator_selections =
+			$this->to_calculator_selections(
+				$selections
+			);
+
+		if ( empty( $calculator_selections ) ) {
+			return [];
+		}
+
+		$product_id =
+			absint(
+				$cart_item['product_id']
+					?? 0
+			);
+
+		$variation_id =
+			absint(
+				$cart_item['variation_id']
+					?? 0
+			);
+
+		$quantity =
+			max(
+				1,
+				absint(
+					$cart_item['quantity']
+						?? 1
+				)
+			);
+
+		$breakdown =
+			$this->calculator
+				->calculate_breakdown(
+					$calculator_selections,
+					[
+						'product_id' =>
+							$product_id,
+
+						'variation_id' =>
+							$variation_id,
+
+						'quantity' =>
+							$quantity,
+					]
+				);
+
+		return $breakdown['fee_breakdown']
+			?? [];
 	}
 
 

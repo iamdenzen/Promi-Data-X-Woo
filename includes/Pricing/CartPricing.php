@@ -456,23 +456,24 @@ final class CartPricing {
 		/*
 		 * Per-unit printing price across every print position/option
 		 * attached to this product (no fees included).
+		 *
+		 * Rounded immediately, then multiplied by quantity for
+		 * printing_total below — the same "round once, at the boundary"
+		 * rule used for $final_unit — so printing_unit_price × quantity
+		 * always exactly equals printing_total on this specific row,
+		 * which is the invariant a customer would actually check.
 		 */
 		$printing_unit_price =
-			$this->numeric_value(
+			$this->money(
 				$printing['unit_price']
 					?? 0
 			);
 
 
-		/*
-		 * printing_unit_price × quantity. Calculator already computes this
-		 * directly (print_total), so we reuse it rather than
-		 * re-multiplying to avoid rounding drift.
-		 */
 		$printing_total =
-			$this->numeric_value(
-				$printing['print_total']
-					?? 0
+			$this->money(
+				$printing_unit_price
+				* $quantity
 			);
 
 
@@ -501,13 +502,23 @@ final class CartPricing {
 		|--------------------------------------------------------------------------
 		|
 		| The base product price only. Excludes printing and fees entirely.
+		|
+		| Rounded immediately for the same reason as printing_unit_price
+		| above: so base_unit_price × quantity exactly equals base_total.
 		*/
 
-		$base_unit_price =
+		$base_unit_price_raw =
 			$this->numeric_nullable(
 				$article_result['article_price']
 					?? null
 			);
+
+		$base_unit_price =
+			null !== $base_unit_price_raw
+				? $this->money(
+					$base_unit_price_raw
+				)
+				: null;
 
 
 		/*
@@ -516,7 +527,10 @@ final class CartPricing {
 		 */
 		$base_total =
 			null !== $base_unit_price
-				? $base_unit_price * $quantity
+				? $this->money(
+					$base_unit_price
+					* $quantity
+				)
 				: 0.0;
 
 
@@ -539,7 +553,17 @@ final class CartPricing {
 		|     unit_price            actual WooCommerce per-unit price
 		|     line_total            actual WooCommerce line total
 		|
-		|     line_total === base_total + printing_total + fees_total
+		| base_total and printing_total are each rounded per-unit first,
+		| so they always agree exactly with their own displayed unit
+		| price row. unit_price/line_total are rounded independently
+		| (from the combined base+printing+fees per-unit amount, since
+		| that's the single number WooCommerce actually bills) — so
+		| line_total is normally, but not guaranteed to be, exactly equal
+		| to base_total + printing_total + fees_total; it can differ by a
+		| very small amount (typically a cent or less) due to rounding at
+		| a different aggregation point. unit_price/line_total are always
+		| the authoritative charged amount; the component fields are for
+		| display/breakdown purposes.
 		*/
 
 		$cart_item[
@@ -570,9 +594,7 @@ final class CartPricing {
 			*/
 
 			'base_unit_price' =>
-				$this->nullable_money(
-					$base_unit_price
-				),
+				$base_unit_price,
 
 			'base_total' =>
 				$this->money(
@@ -586,9 +608,7 @@ final class CartPricing {
 			*/
 
 			'printing_unit_price' =>
-				$this->money(
-					$printing_unit_price
-				),
+				$printing_unit_price,
 
 			'printing_total' =>
 				$this->money(
