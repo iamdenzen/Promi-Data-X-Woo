@@ -103,6 +103,19 @@ $is_price_on_request =
 	isset( $is_price_on_request )
 	&& (bool) $is_price_on_request;
 
+/*
+|--------------------------------------------------------------------------
+| Temporary: Inquiry Form
+|--------------------------------------------------------------------------
+|
+| The standalone inquiry form (name/email/phone/message) is disabled for
+| now. Flip this back to true to re-enable it. Price-on-request requests
+| currently go through the existing site popup anchor
+| (#individuelle-anfrage-senden) via the "Angebot anfordern" button.
+*/
+
+$inquiry_form_enabled = false;
+
 ?>
 
 <form
@@ -715,6 +728,8 @@ $is_price_on_request =
 						</p>
 
 
+						<?php if ( $inquiry_form_enabled ) : ?>
+
 						<div class="cx-inquiry-form">
 
 							<div class="cx-inquiry-message" style="display:none;"></div>
@@ -778,6 +793,8 @@ $is_price_on_request =
 
 						</div>
 
+						<?php endif; ?>
+
 					</div>
 
 					<div class="cxatc-error cxatc-sample-error">
@@ -792,6 +809,58 @@ $is_price_on_request =
 				</div>
 
 			</div>
+
+
+			<?php if ( $is_price_on_request ) : ?>
+
+			<div class="cx-por-overlay">
+
+				<div class="cx-por-overlay-content">
+
+					<h3>
+						<?php
+						echo esc_html__(
+							'Preis auf Anfrage',
+							'promi-data-x-woo'
+						);
+						?>
+					</h3>
+
+					<p>
+						<?php
+						echo esc_html__(
+							'Dieses Produkt ist auf Anfrage erhältlich. Bitte klicken Sie auf die untenstehende Schaltfläche, um Ihre Anfrage zu übermitteln.',
+							'promi-data-x-woo'
+						);
+						?>
+					</p>
+
+					<a
+						href="#individuelle-anfrage-senden"
+						class="cx-trigger-popup cx-offer-btn cx-icon-btn"
+					>
+						<img
+							src="/wp-content/uploads/2026/04/inquiry-icon.webp"
+							width="20"
+							height="20"
+							alt=""
+							aria-hidden="true"
+						>
+
+						<?php
+						echo esc_html__(
+							'Angebot anfordern',
+							'promi-data-x-woo'
+						);
+						?>
+
+					</a>
+
+				</div>
+
+			</div>
+
+			<?php endif; ?>
 
 		</div>
 
@@ -1169,6 +1238,42 @@ $is_price_on_request =
 
 	.cx-wrapper > div {
 		flex: 1;
+	}
+
+	.cx-col2 {
+		position: relative;
+	}
+
+	.cx-por-overlay {
+		position: absolute;
+		inset: 0;
+		z-index: 5;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		padding: 20px;
+		background: rgba(255, 255, 255, 0.94);
+		backdrop-filter: blur(2px);
+		border-radius: 5px;
+		text-align: center;
+	}
+
+	.cx-por-overlay-content {
+		max-width: 320px;
+	}
+
+	.cx-por-overlay-content h3 {
+		margin: 0 0 10px;
+		color: #FF7D01;
+	}
+
+	.cx-por-overlay-content p {
+		margin: 0 0 18px;
+		line-height: 1.5em;
+	}
+
+	.cx-por-overlay-content .cx-offer-btn {
+		display: inline-flex;
 	}
 
 	.cx-summary-col {

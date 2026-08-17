@@ -176,6 +176,15 @@ final class Shortcodes {
 			return '';
 		}
 
+		if (
+			$this->is_price_on_request_product(
+				$context['product'],
+				$context['product_id']
+			)
+		) {
+			return '';
+		}
+
 		return $this->render_template(
 			'price-table.php',
 			$this->template_context(
@@ -305,50 +314,13 @@ final class Shortcodes {
 		|--------------------------------------------------------------------------
 		| Price on Request
 		|--------------------------------------------------------------------------
-		|
-		| For variable products: only mark the page as POR when EVERY variation
-		| is POR. If at least one variation has a price the shopper can still
-		| add to cart; per-variation state is handled by JS after selection.
-		|
-		| For simple products: check the single product directly.
 		*/
 
-		$is_price_on_request = false;
-
-		if ( $product instanceof WC_Product_Variable ) {
-
-			$children = $product->get_children();
-
-			if ( ! empty( $children ) ) {
-
-				$all_por = true;
-
-				foreach ( $children as $child_id ) {
-
-					if (
-						! $this->product_data->is_price_on_request(
-							$product_id,
-							absint( $child_id )
-						)
-					) {
-						$all_por = false;
-						break;
-					}
-				}
-
-				$is_price_on_request = $all_por;
-			}
-
-		} else {
-
-			$is_price_on_request =
-				$this->product_data->is_price_on_request(
-					$product_id,
-					0
-				);
-		}
-
-		$context['is_price_on_request'] = $is_price_on_request;
+		$context['is_price_on_request'] =
+			$this->is_price_on_request_product(
+				$product,
+				$product_id
+			);
 
 
 		return $this->render_template(
@@ -380,6 +352,15 @@ final class Shortcodes {
 			$context[
 				'product_id'
 			];
+
+		if (
+			$this->is_price_on_request_product(
+				$context['product'],
+				$product_id
+			)
+		) {
+			return '';
+		}
 
 
 		/*
@@ -513,6 +494,50 @@ final class Shortcodes {
 			'product' =>
 				$product,
 		];
+	}
+
+
+	/**
+	 * Determine whether a product is entirely price-on-request.
+	 *
+	 * For variable products: only true when EVERY variation is POR. If at
+	 * least one variation has a price the shopper can still add to cart;
+	 * per-variation state is handled by JS after a selection is made.
+	 *
+	 * For simple products: checks the single product directly.
+	 */
+	private function is_price_on_request_product(
+		WC_Product $product,
+		int $product_id
+	): bool {
+
+		if ( $product instanceof WC_Product_Variable ) {
+
+			$children = $product->get_children();
+
+			if ( empty( $children ) ) {
+				return false;
+			}
+
+			foreach ( $children as $child_id ) {
+
+				if (
+					! $this->product_data->is_price_on_request(
+						$product_id,
+						absint( $child_id )
+					)
+				) {
+					return false;
+				}
+			}
+
+			return true;
+		}
+
+		return $this->product_data->is_price_on_request(
+			$product_id,
+			0
+		);
 	}
 
 
