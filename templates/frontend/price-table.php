@@ -343,11 +343,11 @@ if ( ! $product_id ) {
 
 		display: block;
 
-		background:
+		/*background:
 			#fff
 			url(/wp-content/themes/divi-child/assets/select-bg.svg)
 			no-repeat
-			100% 45%;
+			100% 45%;*/
 
 		background-color: transparent;
 		background-clip: padding-box;

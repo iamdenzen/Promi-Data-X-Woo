@@ -461,183 +461,185 @@ $inquiry_form_enabled = false;
 
 			<div class="cx-summary-col">
 
-				<table class="cx-table cxatc-summary">
+				<div class="cx-table-wrapper">
+					<table class="cx-table cxatc-summary">
 
-					<thead>
+						<thead>
 
-						<tr>
-							<th></th>
-							<th>/ Menge</th>
-							<th>/ Gesamt</th>
-						</tr>
+							<tr>
+								<th></th>
+								<th>/ Menge</th>
+								<th>/ Gesamt</th>
+							</tr>
 
-					</thead>
-
-
-					<tbody>
-
-						<tr class="cxatc-summary-base-row">
-
-							<td>
-								<?php
-								echo esc_html__(
-									'Artikelpreis',
-									'promi-data-x-woo'
-								);
-								?>
-							</td>
-
-							<td class="cx-artikel">
-
-								1 x
-
-								<?php
-								echo wp_kses_post(
-									$product_price_html
-								);
-								?>
-
-							</td>
-
-							<td class="cx-artikel-total">
-
-								1 x
-
-								<?php
-								echo wp_kses_post(
-									$product_price_html
-								);
-								?>
-
-							</td>
-
-						</tr>
+						</thead>
 
 
-						<tr style="display:none;">
+						<tbody>
 
-							<td>
-								<?php
-								echo esc_html__(
-									'Veredelung',
-									'promi-data-x-woo'
-								);
-								?>
-							</td>
+							<tr class="cxatc-summary-base-row">
 
-							<td class="cx-veredelung">
-								1 x 0€
-							</td>
-
-							<td class="cx-veredelung-total">
-								1 x 0€
-							</td>
-
-						</tr>
-
-
-						<tr style="display:none;">
-
-							<td>
-								<?php
-								echo esc_html__(
-									'Einrichtung',
-									'promi-data-x-woo'
-								);
-								?>
-							</td>
-
-							<td class="cx-setup">
-								1 × 0€
-							</td>
-
-							<td class="cx-setup-total">
-								0€
-							</td>
-
-						</tr>
-
-					</tbody>
-
-
-					<tfoot>
-
-						<tr>
-
-							<td>
-
-								<strong>
+								<td>
 									<?php
 									echo esc_html__(
-										'Gesamtsumme',
+										'Artikelpreis',
 										'promi-data-x-woo'
 									);
 									?>
-								</strong>
+								</td>
 
-								<small>
-									<?php
-									echo esc_html__(
-										'zzgl. 19% MwSt.',
-										'promi-data-x-woo'
-									);
-									?>
-								</small>
+								<td class="cx-artikel">
 
-							</td>
+									1 x
 
-
-							<td colspan="2">
-
-								<strong class="cx-grand-total">
 									<?php
 									echo wp_kses_post(
 										$product_price_html
 									);
 									?>
-								</strong>
 
+								</td>
 
-								<small class="cx-tax">
+								<td class="cx-artikel-total">
+
+									1 x
+
 									<?php
 									echo wp_kses_post(
-										wc_price(
-											$tax_preview
-										)
+										$product_price_html
 									);
 									?>
-								</small>
+
+								</td>
+
+							</tr>
 
 
-								<span class="cx-tax-tagline">
+							<tr style="display:none;">
 
+								<td>
 									<?php
 									echo esc_html__(
-										'zzgl. Versandkosten',
+										'Veredelung',
 										'promi-data-x-woo'
 									);
 									?>
+								</td>
 
-									<sup
-										data-content="<?php
-										echo esc_attr__(
-											'Versandkosten werden nach Gewicht berechnet – je angefangene 30 kg 19,50 €. Es gilt das tatsächliche Gewicht oder das Volumengewicht (L × B × H ÷ 5000), je nachdem welcher Wert höher ist.',
+								<td class="cx-veredelung">
+									1 x 0€
+								</td>
+
+								<td class="cx-veredelung-total">
+									1 x 0€
+								</td>
+
+							</tr>
+
+
+							<tr style="display:none;">
+
+								<td>
+									<?php
+									echo esc_html__(
+										'Einrichtung',
+										'promi-data-x-woo'
+									);
+									?>
+								</td>
+
+								<td class="cx-setup">
+									1 × 0€
+								</td>
+
+								<td class="cx-setup-total">
+									0€
+								</td>
+
+							</tr>
+
+						</tbody>
+
+
+						<tfoot>
+
+							<tr>
+
+								<td>
+
+									<strong>
+										<?php
+										echo esc_html__(
+											'Gesamtsumme',
 											'promi-data-x-woo'
 										);
-										?>"
-									>
-										i
-									</sup>
+										?>
+									</strong>
 
-								</span>
+									<small>
+										<?php
+										echo esc_html__(
+											'zzgl. 19% MwSt.',
+											'promi-data-x-woo'
+										);
+										?>
+									</small>
 
-							</td>
+								</td>
 
-						</tr>
 
-					</tfoot>
+								<td colspan="2">
 
-				</table>
+									<strong class="cx-grand-total">
+										<?php
+										echo wp_kses_post(
+											$product_price_html
+										);
+										?>
+									</strong>
+
+
+									<small class="cx-tax">
+										<?php
+										echo wp_kses_post(
+											wc_price(
+												$tax_preview
+											)
+										);
+										?>
+									</small>
+
+
+									<span class="cx-tax-tagline">
+
+										<?php
+										echo esc_html__(
+											'zzgl. Versandkosten',
+											'promi-data-x-woo'
+										);
+										?>
+
+										<sup
+											data-content="<?php
+											echo esc_attr__(
+												'Versandkosten werden nach Gewicht berechnet – je angefangene 30 kg 19,50 €. Es gilt das tatsächliche Gewicht oder das Volumengewicht (L × B × H ÷ 5000), je nachdem welcher Wert höher ist.',
+												'promi-data-x-woo'
+											);
+											?>"
+										>
+											i
+										</sup>
+
+									</span>
+
+								</td>
+
+							</tr>
+
+						</tfoot>
+
+					</table>
+				</div>
 
 
 				<?php
@@ -1097,6 +1099,8 @@ $inquiry_form_enabled = false;
 		cursor: not-allowed;
 		pointer-events: none;
 	}
+
+	.cx-table-wrapper{overflow-x:auto;}
 
 	.cx-remove-selection {
 		position: absolute;
