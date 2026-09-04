@@ -7,6 +7,7 @@ use PromiDataXWoo\Core\Plugin;
 use PromiDataXWoo\Pricing\Pricing;
 use PromiDataXWoo\Printing\Printing;
 use PromiDataXWoo\Promi\Promi;
+use PromiDataXWoo\Suppliers\Suppliers;
 
 defined( 'ABSPATH' ) || exit;
 
@@ -42,6 +43,8 @@ final class Admin {
 
 	private Promi $promi;
 
+	private Suppliers $suppliers;
+
 
 	/*
 	|--------------------------------------------------------------------------
@@ -71,6 +74,10 @@ final class Admin {
 
 	private InquiriesPage $inquiries_page;
 
+	private SuppliersPage $suppliers_page;
+
+	private SuppliersAjax $suppliers_ajax;
+
 
 	private bool $initialized = false;
 
@@ -80,13 +87,15 @@ final class Admin {
 		Catalog $catalog,
 		Pricing $pricing,
 		Printing $printing,
-		Promi $promi
+		Promi $promi,
+		Suppliers $suppliers
 	) {
-		$this->plugin   = $plugin;
-		$this->catalog  = $catalog;
-		$this->pricing  = $pricing;
-		$this->printing = $printing;
-		$this->promi    = $promi;
+		$this->plugin    = $plugin;
+		$this->catalog   = $catalog;
+		$this->pricing   = $pricing;
+		$this->printing  = $printing;
+		$this->promi     = $promi;
+		$this->suppliers = $suppliers;
 
 		$this->register_services();
 	}
@@ -208,6 +217,27 @@ final class Admin {
 
 		/*
 		|--------------------------------------------------------------------------
+		| Suppliers Admin
+		|--------------------------------------------------------------------------
+		|
+		| Configuration UI and AJAX operations for the Suppliers module
+		| (Suppliers\Suppliers). Business logic — fetching, field mapping,
+		| matching, applying — stays inside Suppliers.
+		*/
+
+		$this->suppliers_page =
+			new SuppliersPage(
+				$this->suppliers
+			);
+
+		$this->suppliers_ajax =
+			new SuppliersAjax(
+				$this->suppliers
+			);
+
+
+		/*
+		|--------------------------------------------------------------------------
 		| Admin Navigation
 		|--------------------------------------------------------------------------
 		|
@@ -227,7 +257,8 @@ final class Admin {
 				$this->pricing_calculator_page,
 				$this->printing_page,
 				$this->markup_page,
-				$this->inquiries_page
+				$this->inquiries_page,
+				$this->suppliers_page
 			);
 
 
@@ -358,6 +389,8 @@ final class Admin {
 
 		$this->ajax->init();
 
+		$this->suppliers_ajax->init();
+
 
 		/*
 		|--------------------------------------------------------------------------
@@ -392,6 +425,8 @@ final class Admin {
 		$this->markup_page->init();
 
 		$this->inquiries_page->init();
+
+		$this->suppliers_page->init();
 
 
 		do_action(
@@ -457,6 +492,16 @@ final class Admin {
 	}
 
 
+	public function suppliers_page(): SuppliersPage {
+		return $this->suppliers_page;
+	}
+
+
+	public function suppliers_ajax(): SuppliersAjax {
+		return $this->suppliers_ajax;
+	}
+
+
 	/*
 	|--------------------------------------------------------------------------
 	| Domain Accessors
@@ -485,6 +530,11 @@ final class Admin {
 
 	public function promi(): Promi {
 		return $this->promi;
+	}
+
+
+	public function suppliers(): Suppliers {
+		return $this->suppliers;
 	}
 
 

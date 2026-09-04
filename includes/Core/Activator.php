@@ -3,6 +3,7 @@
 namespace PromiDataXWoo\Core;
 
 use PromiDataXWoo\Promi\Cron;
+use PromiDataXWoo\Suppliers\Cron as SupplierCron;
 
 defined( 'ABSPATH' ) || exit;
 
@@ -80,6 +81,17 @@ final class Activator {
 		*/
 
 		Cron::activate();
+
+
+		/*
+		|--------------------------------------------------------------------------
+		| Supplier Cron
+		|--------------------------------------------------------------------------
+		|
+		| Scheduling only, same reasoning as the Promi cron above.
+		*/
+
+		SupplierCron::activate();
 
 
 		/*

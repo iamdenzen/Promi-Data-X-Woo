@@ -230,6 +230,77 @@ final class Products {
 	}
 
 
+	/**
+	 * Resolve every existing product/variation SKU starting with a prefix.
+	 *
+	 * Return structure:
+	 *
+	 * [
+	 *     'A58-1001763'        => 120,
+	 *     'A58-1001763-101231' => 121,
+	 * ]
+	 *
+	 * Used by supplier sync sources that need to know which of our own
+	 * SKUs to ask a supplier API about (rather than the other way around,
+	 * as ids_by_skus() supports for feeds that hand back full SKUs).
+	 */
+	public function skus_by_prefix(
+		string $prefix
+	): array {
+
+		global $wpdb;
+
+		$prefix = trim( $prefix );
+
+		if ( '' === $prefix ) {
+			return [];
+		}
+
+		$like = $wpdb->esc_like( $prefix ) . '%';
+
+		$sql =
+			"SELECT
+				pm.meta_value AS sku,
+				pm.post_id AS product_id
+			FROM {$wpdb->postmeta} pm
+			INNER JOIN {$wpdb->posts} p
+				ON p.ID = pm.post_id
+			WHERE pm.meta_key = '_sku'
+				AND pm.meta_value LIKE %s
+				AND p.post_type IN (
+					'product',
+					'product_variation'
+				)";
+
+		$rows =
+			$wpdb->get_results(
+				$wpdb->prepare(
+					$sql,
+					$like
+				)
+			);
+
+		$map = [];
+
+		foreach ( $rows as $row ) {
+
+			$sku        = (string) $row->sku;
+			$product_id = absint( $row->product_id );
+
+			if (
+				'' === $sku
+				|| ! $product_id
+			) {
+				continue;
+			}
+
+			$map[ $sku ] = $product_id;
+		}
+
+		return $map;
+	}
+
+
 	/*
 	|--------------------------------------------------------------------------
 	| Promi Physical Product Data

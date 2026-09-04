@@ -3,6 +3,7 @@
 namespace PromiDataXWoo\Core;
 
 use PromiDataXWoo\Promi\Cron;
+use PromiDataXWoo\Suppliers\Cron as SupplierCron;
 
 defined( 'ABSPATH' ) || exit;
 
@@ -41,6 +42,15 @@ final class Deactivator {
 		*/
 
 		Cron::deactivate();
+
+
+		/*
+		|--------------------------------------------------------------------------
+		| Supplier Cron
+		|--------------------------------------------------------------------------
+		*/
+
+		SupplierCron::deactivate();
 
 
 		/*

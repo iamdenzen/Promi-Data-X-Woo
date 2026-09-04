@@ -9,6 +9,7 @@ use PromiDataXWoo\Mcp\Mcp;
 use PromiDataXWoo\Pricing\Pricing;
 use PromiDataXWoo\Printing\Printing;
 use PromiDataXWoo\Promi\Promi;
+use PromiDataXWoo\Suppliers\Suppliers;
 
 defined( 'ABSPATH' ) || exit;
 
@@ -47,6 +48,8 @@ final class Plugin {
 	private ?Mcp $mcp = null;
 
 	private ?Promi $promi = null;
+
+	private ?Suppliers $suppliers = null;
 
 	private ?Frontend $frontend = null;
 
@@ -222,6 +225,23 @@ final class Plugin {
 
 		/*
 		|--------------------------------------------------------------------------
+		| Suppliers
+		|--------------------------------------------------------------------------
+		|
+		| Enriches existing Promi-imported products (stock, delivery time,
+		| purchase price) from separate per-supplier feeds. Reads/writes
+		| Catalog and Pricing but does not depend on Promi.
+		*/
+
+		$this->suppliers = new Suppliers(
+			$this,
+			$this->catalog,
+			$this->pricing
+		);
+
+
+		/*
+		|--------------------------------------------------------------------------
 		| Frontend
 		|--------------------------------------------------------------------------
 		|
@@ -249,7 +269,8 @@ final class Plugin {
 				$this->catalog,
 				$this->pricing,
 				$this->printing,
-				$this->promi
+				$this->promi,
+				$this->suppliers
 			);
 		}
 	}
@@ -308,6 +329,15 @@ final class Plugin {
 		*/
 
 		$this->promi?->init();
+
+
+		/*
+		|--------------------------------------------------------------------------
+		| Suppliers
+		|--------------------------------------------------------------------------
+		*/
+
+		$this->suppliers?->init();
 
 
 		/*
@@ -373,6 +403,11 @@ final class Plugin {
 
 	public function promi(): ?Promi {
 		return $this->promi;
+	}
+
+
+	public function suppliers(): ?Suppliers {
+		return $this->suppliers;
 	}
 
 

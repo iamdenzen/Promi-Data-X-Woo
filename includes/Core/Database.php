@@ -15,7 +15,7 @@ defined( 'ABSPATH' ) || exit;
  */
 final class Database {
 
-	public const VERSION = '1.3.0';
+	public const VERSION = '1.4.0';
 
 	public const VERSION_OPTION = 'pdxw_db_version';
 
@@ -99,6 +99,16 @@ final class Database {
 
 			'inquiries' =>
 				'cx_inquiries',
+
+
+			/*
+			|--------------------------------------------------------------------------
+			| Supplier Sync
+			|--------------------------------------------------------------------------
+			*/
+
+			'supplier_sources' =>
+				'cx_supplier_sources',
 		];
 
 		if ( ! isset( $tables[ $table ] ) ) {
@@ -472,6 +482,70 @@ final class Database {
 		dbDelta( $sql );
 
 
+		/*
+		|--------------------------------------------------------------------------
+		| Supplier Sources
+		|--------------------------------------------------------------------------
+		|
+		| Each row is one third-party supplier API used to enrich existing
+		| Promi products with data Promi itself does not reliably provide:
+		| stock quantity, delivery time, and purchase price.
+		|
+		| sku_prefix
+		|     Identifies which existing WooCommerce SKUs this source is
+		|     allowed to touch (e.g. "A58-"). Free text: a row can exist for
+		|     a supplier before any adapter code for it has been written.
+		|
+		| adapter_key
+		|     Identifies which hardcoded Suppliers\Contracts\SupplierAdapter
+		|     implementation (via AdapterRegistry) actually knows how to
+		|     fetch this supplier's feed. Empty when no adapter exists yet
+		|     for this source — such rows are configured but never run.
+		|
+		| endpoint_url / credential
+		|     Where to fetch from and the secret (bearer token / API key)
+		|     to send. Each adapter hardcodes its own required header name
+		|     and request shape — these three suppliers are structurally
+		|     too different (query-by-SKU vs. bulk GET vs. a deeply nested
+		|     tree) for one generic field-mapping config to cover.
+		|
+		| sync_interval_minutes
+		|     How often this source is allowed to run, checked against
+		|     last_synced_at by the supplier cron tick.
+		|
+		| last_status / last_message / last_matched / last_updated
+		|     Snapshot of the most recent run, shown in the admin UI.
+		*/
+
+		$table = self::table(
+			'supplier_sources'
+		);
+
+		$sql = "CREATE TABLE {$table} (
+			id bigint unsigned NOT NULL AUTO_INCREMENT,
+			name varchar(191) NOT NULL DEFAULT '',
+			sku_prefix varchar(50) NOT NULL,
+			adapter_key varchar(50) NOT NULL DEFAULT '',
+			enabled tinyint(1) NOT NULL DEFAULT 1,
+			endpoint_url text DEFAULT NULL,
+			credential varchar(191) NOT NULL DEFAULT '',
+			sync_interval_minutes int unsigned NOT NULL DEFAULT 60,
+			last_synced_at datetime DEFAULT NULL,
+			last_status varchar(20) NOT NULL DEFAULT '',
+			last_message text DEFAULT NULL,
+			last_matched int unsigned NOT NULL DEFAULT 0,
+			last_updated int unsigned NOT NULL DEFAULT 0,
+			created_at datetime DEFAULT CURRENT_TIMESTAMP,
+			updated_at datetime DEFAULT CURRENT_TIMESTAMP,
+			PRIMARY KEY  (id),
+			UNIQUE KEY sku_prefix_unique (sku_prefix),
+			KEY enabled_idx (enabled),
+			KEY adapter_key_idx (adapter_key)
+		) {$charset};";
+
+		dbDelta( $sql );
+
+
 
 		/*
 		|--------------------------------------------------------------------------
@@ -688,6 +762,7 @@ final class Database {
 			'print_relation',
 			'pricing_markup_rules',
 			'inquiries',
+			'supplier_sources',
 		];
 	}
 }

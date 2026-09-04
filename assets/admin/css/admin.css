@@ -392,6 +392,14 @@
 	background: var(--pdxw-danger);
 }
 
+.pdxw-admin .pdxw-status--success::before {
+	background: var(--pdxw-success);
+}
+
+.pdxw-admin .pdxw-status--error::before {
+	background: var(--pdxw-danger);
+}
+
 
 /*
 |--------------------------------------------------------------------------

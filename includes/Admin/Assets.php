@@ -295,6 +295,11 @@ final class Assets {
 						$this->menu->url(
 							Menu::INQUIRIES_SLUG
 						),
+
+					'suppliers' =>
+						$this->menu->url(
+							Menu::SUPPLIERS_SLUG
+						),
 				],
 
 
@@ -354,6 +359,15 @@ final class Assets {
 
 					'delete_inquiry' =>
 						'pdxw_delete_inquiry',
+
+					'supplier_save_source' =>
+						SuppliersAjax::ACTION_SAVE_SOURCE,
+
+					'supplier_delete_source' =>
+						SuppliersAjax::ACTION_DELETE_SOURCE,
+
+					'supplier_run_source_now' =>
+						SuppliersAjax::ACTION_RUN_SOURCE_NOW,
 				],
 
 

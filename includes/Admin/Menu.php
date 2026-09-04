@@ -65,6 +65,9 @@ final class Menu {
 	public const INQUIRIES_SLUG =
 		'pdxw-inquiries';
 
+	public const SUPPLIERS_SLUG =
+		'pdxw-suppliers';
+
 
 	/*
 	|--------------------------------------------------------------------------
@@ -99,6 +102,8 @@ final class Menu {
 
 	private InquiriesPage $inquiries_page;
 
+	private SuppliersPage $suppliers_page;
+
 	private bool $initialized = false;
 
 	/**
@@ -117,7 +122,8 @@ final class Menu {
 		PricingCalculatorPage $pricing_calculator_page,
 		PrintingPage $printing_page,
 		MarkupPage $markup_page,
-		InquiriesPage $inquiries_page
+		InquiriesPage $inquiries_page,
+		SuppliersPage $suppliers_page
 	) {
 		$this->promi_pages             = $promi_pages;
 		$this->pricing_page            = $pricing_page;
@@ -125,6 +131,7 @@ final class Menu {
 		$this->printing_page           = $printing_page;
 		$this->markup_page             = $markup_page;
 		$this->inquiries_page          = $inquiries_page;
+		$this->suppliers_page          = $suppliers_page;
 	}
 
 
@@ -491,6 +498,35 @@ final class Menu {
 			);
 
 
+		/*
+		|--------------------------------------------------------------------------
+		| Suppliers
+		|--------------------------------------------------------------------------
+		*/
+
+		$this->page_hooks[
+			self::SUPPLIERS_SLUG
+		] =
+			(string)
+			add_submenu_page(
+				self::ROOT_SLUG,
+				__(
+					'Suppliers',
+					'promi-data-x-woo'
+				),
+				__(
+					'Suppliers',
+					'promi-data-x-woo'
+				),
+				self::CAPABILITY,
+				self::SUPPLIERS_SLUG,
+				[
+					$this->suppliers_page,
+					'render',
+				]
+			);
+
+
 		do_action(
 			'pdxw_admin_menu_registered',
 			$this,
@@ -580,6 +616,7 @@ final class Menu {
 			self::PRINTING_SLUG,
 			self::MARKUP_SLUG,
 			self::INQUIRIES_SLUG,
+			self::SUPPLIERS_SLUG,
 		];
 	}
 

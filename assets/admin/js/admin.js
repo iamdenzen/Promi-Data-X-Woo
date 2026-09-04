@@ -2874,6 +2874,405 @@
 
 	/*
 	|--------------------------------------------------------------------------
+	| Suppliers
+	|--------------------------------------------------------------------------
+	*/
+
+	function suppliersMessage(
+		value,
+		type = "success"
+	) {
+
+		message(
+			"#pdxw-suppliers-message",
+			value,
+			type
+		);
+	}
+
+
+	/**
+	 * Auto-select the matching adapter when the SKU prefix is typed, but
+	 * only while the adapter dropdown is still unset — never overrides a
+	 * deliberate manual choice.
+	 */
+	$(document).on(
+		"input blur",
+		"#pdxw-supplier-prefix",
+		function () {
+
+			const $adapter =
+				$("#pdxw-supplier-adapter");
+
+
+			if (
+				!$adapter.length
+				|| $adapter.val()
+			) {
+				return;
+			}
+
+
+			const prefix =
+				String(
+					$(this)
+						.val()
+						|| ""
+				)
+					.trim();
+
+
+			if (!prefix) {
+				return;
+			}
+
+
+			const $match =
+				$adapter
+					.find("option")
+					.filter(
+						function () {
+
+							return $(this)
+								.data("prefix")
+								=== prefix;
+						}
+					)
+					.first();
+
+
+			if ($match.length) {
+
+				$adapter.val(
+					$match.val()
+				);
+			}
+		}
+	);
+
+
+	$(document).on(
+		"click",
+		"#pdxw-save-supplier",
+		function () {
+
+			const $button =
+				$(this);
+
+
+			const id =
+				Number.parseInt(
+					$("#pdxw-supplier-id")
+						.val(),
+					10
+				) || 0;
+
+
+			const field =
+				selector => String(
+					$(selector)
+						.val()
+						|| ""
+				)
+					.trim();
+
+
+			const data = {
+				id,
+
+				name:
+					field("#pdxw-supplier-name"),
+
+				sku_prefix:
+					field("#pdxw-supplier-prefix"),
+
+				adapter_key:
+					field("#pdxw-supplier-adapter"),
+
+				enabled:
+					$("#pdxw-supplier-enabled")
+						.is(":checked")
+						? "1"
+						: "0",
+
+				sync_interval_minutes:
+					field("#pdxw-supplier-interval"),
+
+				endpoint_url:
+					field("#pdxw-supplier-url"),
+
+				credential:
+					field("#pdxw-supplier-credential")
+			};
+
+
+			if (!data.sku_prefix) {
+
+				suppliersMessage(
+					"A SKU prefix is required.",
+					"warning"
+				);
+
+				return;
+			}
+
+
+			loading(
+				$button,
+				true,
+				text(
+					"saving",
+					"Saving…"
+				)
+			);
+
+
+			request(
+				"supplier_save_source",
+				data
+			)
+				.done(
+					responseData => {
+
+						suppliersMessage(
+							responseData.message
+								|| text(
+									"saved",
+									"Saved."
+								),
+							"success"
+						);
+
+
+						window.setTimeout(
+							() => {
+								window.location.reload();
+							},
+							250
+						);
+					}
+				)
+				.fail(
+					error => {
+
+						suppliersMessage(
+							errorMessage(
+								error
+							),
+							"error"
+						);
+					}
+				)
+				.always(
+					() => {
+
+						loading(
+							$button,
+							false
+						);
+					}
+				);
+		}
+	);
+
+
+	$(document).on(
+		"click",
+		".pdxw-delete-supplier",
+		function () {
+
+			const $button =
+				$(this);
+
+
+			const id =
+				Number.parseInt(
+					$button.data(
+						"supplier-id"
+					),
+					10
+				) || 0;
+
+
+			if (!id) {
+				return;
+			}
+
+
+			if (
+				!window.confirm(
+					"Delete this supplier source? This cannot be undone."
+				)
+			) {
+				return;
+			}
+
+
+			loading(
+				$button,
+				true,
+				text(
+					"processing",
+					"Processing…"
+				)
+			);
+
+
+			request(
+				"supplier_delete_source",
+				{
+					id
+				}
+			)
+				.done(
+					data => {
+
+						$button
+							.closest("tr")
+							.fadeOut(
+								150,
+								function () {
+									$(this).remove();
+								}
+							);
+
+
+						suppliersMessage(
+							data.message
+								|| text(
+									"done",
+									"Done."
+								),
+							"success"
+						);
+					}
+				)
+				.fail(
+					error => {
+
+						suppliersMessage(
+							errorMessage(
+								error
+							),
+							"error"
+						);
+					}
+				)
+				.always(
+					() => {
+
+						if (
+							$.contains(
+								document,
+								$button[0]
+							)
+						) {
+
+							loading(
+								$button,
+								false
+							);
+						}
+					}
+				);
+		}
+	);
+
+
+	$(document).on(
+		"click",
+		".pdxw-run-supplier-now",
+		function () {
+
+			const $button =
+				$(this);
+
+
+			const id =
+				Number.parseInt(
+					$button.data(
+						"supplier-id"
+					),
+					10
+				) || 0;
+
+
+			if (!id) {
+				return;
+			}
+
+
+			loading(
+				$button,
+				true,
+				text(
+					"processing",
+					"Processing…"
+				)
+			);
+
+
+			request(
+				"supplier_run_source_now",
+				{
+					id
+				}
+			)
+				.done(
+					data => {
+
+						suppliersMessage(
+							data.message
+								|| text(
+									"done",
+									"Done."
+								),
+							"success"
+						);
+
+
+						window.setTimeout(
+							() => {
+								window.location.reload();
+							},
+							500
+						);
+					}
+				)
+				.fail(
+					error => {
+
+						suppliersMessage(
+							errorMessage(
+								error
+							),
+							"error"
+						);
+					}
+				)
+				.always(
+					() => {
+
+						if (
+							$.contains(
+								document,
+								$button[0]
+							)
+						) {
+
+							loading(
+								$button,
+								false
+							);
+						}
+					}
+				);
+		}
+	);
+
+
+	/*
+	|--------------------------------------------------------------------------
 	| Keyboard Shortcuts
 	|--------------------------------------------------------------------------
 	*/
