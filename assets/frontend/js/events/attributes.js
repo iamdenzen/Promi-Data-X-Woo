@@ -489,6 +489,33 @@ window.CX = window.CX || {};
 			);
 
 
+		CX.state.out_of_stock =
+			data.in_stock === undefined
+				? false
+				: ! data.in_stock;
+
+		$form
+			.attr(
+				"data-out-of-stock",
+				CX.state.out_of_stock ? "1" : "0"
+			)
+			.toggleClass(
+				"cx-stock-blocked",
+				CX.state.out_of_stock
+			);
+
+		$form
+			.find(".cx-cart-btn")
+			.toggle(
+				! CX.state.price_on_request
+				&& ! CX.state.out_of_stock
+			);
+
+		$form
+			.find(".cx-stock-notice")
+			.toggle( CX.state.out_of_stock );
+
+
 		$(".cxatc-error")
 			.hide();
 

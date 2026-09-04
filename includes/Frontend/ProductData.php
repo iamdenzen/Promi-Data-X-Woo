@@ -241,6 +241,9 @@ final class ProductData {
 					$product_id,
 					$variation_id
 				),
+
+			'in_stock' =>
+				$target->is_in_stock(),
 		];
 	}
 

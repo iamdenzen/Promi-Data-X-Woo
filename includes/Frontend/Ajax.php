@@ -467,6 +467,30 @@ final class Ajax {
 
 		/*
 		|--------------------------------------------------------------------------
+		| Stock
+		|--------------------------------------------------------------------------
+		|
+		| is_purchasable() does not check stock status, so a variation whose
+		| supplier feed reported it out of stock could otherwise still reach
+		| the cart via a direct AJAX request even though the UI blocks it.
+		*/
+
+		if ( ! $target->is_in_stock() ) {
+
+			wp_send_json_error(
+				[
+					'message' =>
+						__(
+							'This product variation is currently out of stock.',
+							'promi-data-x-woo'
+						),
+				]
+			);
+		}
+
+
+		/*
+		|--------------------------------------------------------------------------
 		| Cart Item Data
 		|--------------------------------------------------------------------------
 		*/

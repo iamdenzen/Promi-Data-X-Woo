@@ -87,6 +87,26 @@ window.CX = window.CX || {};
 
 			/*
 			|--------------------------------------------------------------------------
+			| Stock
+			|--------------------------------------------------------------------------
+			|
+			| The Add to Cart button is already hidden while out of stock, but
+			| this guards against a form submit reaching this handler by some
+			| other means (e.g. Enter key) while that state is active.
+			*/
+
+			if (CX.state.out_of_stock) {
+
+				$(this)
+					.find(".cx-stock-notice")
+					.show();
+
+				return;
+			}
+
+
+			/*
+			|--------------------------------------------------------------------------
 			| Quantity
 			|--------------------------------------------------------------------------
 			*/

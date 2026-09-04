@@ -153,5 +153,18 @@ CX.state = {
 	| Updated by handleVariationChange after each variation AJAX response.
 	*/
 
-	price_on_request: false
+	price_on_request: false,
+
+
+	/*
+	|--------------------------------------------------------------------------
+	| Stock
+	|--------------------------------------------------------------------------
+	|
+	| Set to true when the selected variation is out of stock. Updated after
+	| each variation AJAX response (both the attribute-selection path and
+	| handleVariationChange).
+	*/
+
+	out_of_stock: false
 };

@@ -323,6 +323,19 @@ final class Shortcodes {
 			);
 
 
+		/*
+		|--------------------------------------------------------------------------
+		| Stock
+		|--------------------------------------------------------------------------
+		*/
+
+		$context['is_out_of_stock'] =
+			$this->is_out_of_stock_product(
+				$product,
+				$product_id
+			);
+
+
 		return $this->render_template(
 			'add-to-cart.php',
 			$this->template_context(
@@ -538,6 +551,49 @@ final class Shortcodes {
 			$product_id,
 			0
 		);
+	}
+
+
+	/**
+	 * Determine whether a product is entirely out of stock.
+	 *
+	 * For variable products: only true when EVERY variation is out of
+	 * stock. If at least one variation is still available the shopper can
+	 * select it, so the form stays visible; per-variation state is handled
+	 * by JS after a selection is made — same reasoning as
+	 * is_price_on_request_product() above.
+	 *
+	 * For simple products: checks the single product directly.
+	 */
+	private function is_out_of_stock_product(
+		WC_Product $product,
+		int $product_id
+	): bool {
+
+		if ( $product instanceof WC_Product_Variable ) {
+
+			$children = $product->get_children();
+
+			if ( empty( $children ) ) {
+				return false;
+			}
+
+			foreach ( $children as $child_id ) {
+
+				$variation = wc_get_product( $child_id );
+
+				if (
+					$variation instanceof WC_Product_Variation
+					&& $variation->is_in_stock()
+				) {
+					return false;
+				}
+			}
+
+			return true;
+		}
+
+		return ! $product->is_in_stock();
 	}
 
 

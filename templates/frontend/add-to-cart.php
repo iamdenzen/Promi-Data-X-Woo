@@ -103,6 +103,10 @@ $is_price_on_request =
 	isset( $is_price_on_request )
 	&& (bool) $is_price_on_request;
 
+$is_out_of_stock =
+	isset( $is_out_of_stock )
+	&& (bool) $is_out_of_stock;
+
 /*
 |--------------------------------------------------------------------------
 | Temporary: Inquiry Form
@@ -119,11 +123,12 @@ $inquiry_form_enabled = false;
 ?>
 
 <form
-	class="cx-addtocart-form<?php echo $is_price_on_request ? ' cx-por-active' : ''; ?>"
+	class="cx-addtocart-form<?php echo $is_price_on_request ? ' cx-por-active' : ''; ?><?php echo $is_out_of_stock ? ' cx-stock-blocked' : ''; ?>"
 	method="post"
 	enctype="multipart/form-data"
 	id="cxatc-form"
 	data-price-on-request="<?php echo $is_price_on_request ? '1' : '0'; ?>"
+	data-out-of-stock="<?php echo $is_out_of_stock ? '1' : '0'; ?>"
 >
 
 	<div class="cx-wrapper">
@@ -710,7 +715,7 @@ $inquiry_form_enabled = false;
 						class="single_add_to_cart_button cx-icon-btn cx-cart-btn"
 						data-font="ETmodules"
 						data-icon=""
-						<?php echo $is_price_on_request ? 'style="display:none;"' : ''; ?>
+						<?php echo ( $is_price_on_request || $is_out_of_stock ) ? 'style="display:none;"' : ''; ?>
 					>
 						<?php
 						echo esc_html__(
@@ -797,6 +802,17 @@ $inquiry_form_enabled = false;
 
 						<?php endif; ?>
 
+					</div>
+
+					<div class="cx-stock-notice" style="<?php echo $is_out_of_stock ? '' : 'display:none;'; ?>">
+						<p>
+							<?php
+							echo esc_html__(
+								'Diese Variante ist derzeit nicht auf Lager.',
+								'promi-data-x-woo'
+							);
+							?>
+						</p>
 					</div>
 
 					<div class="cxatc-error cxatc-sample-error">
