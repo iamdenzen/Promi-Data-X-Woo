@@ -1465,6 +1465,124 @@
 	}
 
 
+	/**
+	 * Synchronize images for one SKU immediately, independent of the
+	 * import queue and of automatic sync/cron state.
+	 */
+	function processSkuImagesNow(
+		sku,
+		$button = null
+	) {
+
+		sku =
+			String(
+				sku
+				|| ""
+			)
+				.trim();
+
+
+		if (!sku) {
+
+			dashboardMessage(
+				"Please provide a Promi SKU.",
+				"warning"
+			);
+
+
+			return $.Deferred()
+				.reject()
+				.promise();
+		}
+
+
+		if ($button?.length) {
+
+			loading(
+				$button,
+				true,
+				text(
+					"processing",
+					"Processing…"
+				)
+			);
+		}
+
+
+		return request(
+			"process_sku_images_now",
+			{
+				sku
+			}
+		)
+			.done(
+				data => {
+
+					dashboardMessage(
+						data.message
+							|| text(
+								"done",
+								"Done."
+							),
+						"success"
+					);
+				}
+			)
+			.fail(
+				error => {
+
+					dashboardMessage(
+						errorMessage(
+							error
+						),
+						"error"
+					);
+				}
+			)
+			.always(
+				() => {
+
+					if ($button?.length) {
+
+						loading(
+							$button,
+							false
+						);
+					}
+				}
+			);
+	}
+
+
+	$(document).on(
+		"click",
+		"#pdxw-process-sku-images-now-button",
+		function () {
+
+			const $button =
+				$(this);
+
+
+			const sku =
+				$("#pdxw-process-sku")
+					.val();
+
+
+			processSkuImagesNow(
+				sku,
+				$button
+			)
+				.done(
+					() => {
+
+						$("#pdxw-process-sku")
+							.val("");
+					}
+				);
+		}
+	);
+
+
 	$(document).on(
 		"click",
 		"#pdxw-process-sku-now-button",

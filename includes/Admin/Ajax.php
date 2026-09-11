@@ -72,6 +72,9 @@ final class Ajax {
 	public const ACTION_PROCESS_SKU_NOW =
 		'pdxw_promi_process_sku_now';
 
+	public const ACTION_PROCESS_SKU_IMAGES_NOW =
+		'pdxw_promi_process_sku_images_now';
+
 	public const ACTION_ADD_IGNORE_SKU =
 		'pdxw_promi_add_ignore_sku';
 
@@ -160,6 +163,11 @@ final class Ajax {
 		$this->register_action(
 			self::ACTION_PROCESS_SKU_NOW,
 			'process_sku_now'
+		);
+
+		$this->register_action(
+			self::ACTION_PROCESS_SKU_IMAGES_NOW,
+			'process_sku_images_now'
 		);
 
 		$this->register_action(
@@ -837,24 +845,6 @@ final class Ajax {
 		}
 
 
-		if (
-			$this->promi
-				->is_paused()
-		) {
-
-			wp_send_json_error(
-				[
-					'message' =>
-						__(
-							'Promi synchronization is currently paused.',
-							'promi-data-x-woo'
-						),
-				],
-				409
-			);
-		}
-
-
 		$action =
 			sanitize_key(
 				$this->request_string(
@@ -993,6 +983,133 @@ final class Ajax {
 					$this->promi
 						->queue()
 						->stats(),
+			]
+		);
+	}
+
+
+	/**
+	 * Synchronize images for one specific SKU right now.
+	 *
+	 * Unlike process_sku_now(), this is unrelated to the import queue: it
+	 * acts directly on the product's images and does not require the
+	 * product to be flagged as pending image sync, nor for automatic
+	 * synchronization to be enabled.
+	 */
+	public function process_sku_images_now(): void {
+
+		$this->authorize();
+
+
+		$sku =
+			$this->request_string(
+				'sku'
+			);
+
+
+		if ( '' === $sku ) {
+
+			wp_send_json_error(
+				[
+					'message' =>
+						__(
+							'Please provide a Promi SKU.',
+							'promi-data-x-woo'
+						),
+				],
+				400
+			);
+		}
+
+
+		if (
+			IgnoreRules::is_sku_ignored(
+				$sku
+			)
+		) {
+
+			wp_send_json_error(
+				[
+					'message' =>
+						__(
+							'This SKU is currently excluded from Promi synchronization.',
+							'promi-data-x-woo'
+						),
+				],
+				409
+			);
+		}
+
+
+		try {
+
+			$result =
+				$this->promi
+					->process_images_now(
+						$sku
+					);
+
+		} catch ( \Throwable $e ) {
+
+			$this->send_exception(
+				$e,
+				'The SKU images could not be processed.'
+			);
+		}
+
+
+		if ( ! $result['found'] ) {
+
+			wp_send_json_error(
+				[
+					'message' =>
+						sprintf(
+							/* translators: %s: Promi SKU. */
+							__(
+								'No WooCommerce product or Promi index record was found for SKU %s.',
+								'promi-data-x-woo'
+							),
+							$sku
+						),
+				],
+				404
+			);
+		}
+
+
+		if ( empty( $result['success'] ) ) {
+
+			wp_send_json_error(
+				[
+					'message' =>
+						sprintf(
+							/* translators: %s: Promi SKU. */
+							__(
+								'Image synchronization for SKU %s failed. Check the log for details.',
+								'promi-data-x-woo'
+							),
+							$sku
+						),
+				],
+				500
+			);
+		}
+
+
+		wp_send_json_success(
+			[
+				'message' =>
+					sprintf(
+						/* translators: %s: Promi SKU. */
+						__(
+							'Images for SKU %s were synchronized successfully.',
+							'promi-data-x-woo'
+						),
+						$sku
+					),
+
+				'sku' =>
+					$sku,
 			]
 		);
 	}

@@ -364,16 +364,12 @@ final class Promi {
 	 * retry backoff delay and the wait for the next scheduled worker
 	 * tick.
 	 *
+	 * This is a manual, explicit action and is intentionally allowed even
+	 * while automatic synchronization is paused.
+	 *
 	 * @return array{found:bool,success?:bool}
 	 */
 	public function process_sku_now( string $sku ): array {
-
-		if ( $this->is_paused() ) {
-
-			return [
-				'found' => false,
-			];
-		}
 
 		return $this->worker->process_now( $sku );
 	}
@@ -389,6 +385,21 @@ final class Promi {
 		}
 
 		$this->images->run();
+	}
+
+
+	/**
+	 * Synchronize images for one specific SKU immediately.
+	 *
+	 * Like process_sku_now(), this is a manual, explicit action and is
+	 * intentionally allowed even while automatic synchronization is
+	 * paused.
+	 *
+	 * @return array{found:bool,success?:bool}
+	 */
+	public function process_images_now( string $sku ): array {
+
+		return $this->images->process_sku_now( $sku );
 	}
 
 

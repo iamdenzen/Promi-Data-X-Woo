@@ -807,6 +807,24 @@ final class PromiPages {
 						?>
 					</button>
 
+
+					<button
+						type="button"
+						id="pdxw-process-sku-images-now-button"
+						class="button"
+						title="<?php echo esc_attr__(
+							'Synchronize this product\'s images right now, independent of automatic synchronization.',
+							'promi-data-x-woo'
+						); ?>"
+					>
+						<?php
+						echo esc_html__(
+							'Sync Images Now',
+							'promi-data-x-woo'
+						);
+						?>
+					</button>
+
 				</p>
 
 			</div>

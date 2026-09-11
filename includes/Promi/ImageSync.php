@@ -225,13 +225,78 @@ final class ImageSync {
 
 
 	/**
+	 * Synchronize images for one specific SKU immediately.
+	 *
+	 * Unlike run(), this does not require the product to be flagged as
+	 * pending image sync (_cx_need_to_sync_images) — it is a direct manual
+	 * trigger, independent of the automatic sync/cron state.
+	 *
+	 * @return array{found:bool,success?:bool}
+	 */
+	public function process_sku_now(
+		string $sku
+	): array {
+
+		$sku = sanitize_text_field(
+			$sku
+		);
+
+		if ( '' === $sku ) {
+
+			return [
+				'found' => false,
+			];
+		}
+
+		$product_id =
+			wc_get_product_id_by_sku(
+				$sku
+			);
+
+		if ( ! $product_id ) {
+
+			return [
+				'found' => false,
+			];
+		}
+
+		$rows = $this->index_rows(
+			[ $sku ]
+		);
+
+		$row = $rows[0] ?? null;
+
+		if (
+			! $row
+			|| empty( $row->json_url )
+		) {
+
+			return [
+				'found' => false,
+			];
+		}
+
+		return [
+			'found' => true,
+
+			'success' =>
+				$this->process_product(
+					$product_id,
+					$sku,
+					(string) $row->json_url
+				),
+		];
+	}
+
+
+	/**
 	 * Process images for one product.
 	 */
 	private function process_product(
 		int $product_id,
 		string $sku,
 		string $json_url
-	): void {
+	): bool {
 
 		$data = $this->client
 			->get_product(
@@ -255,7 +320,7 @@ final class ImageSync {
 				]
 			);
 
-			return;
+			return false;
 		}
 
 		try {
@@ -281,7 +346,7 @@ final class ImageSync {
 				]
 			);
 
-			return;
+			return false;
 		}
 
 
@@ -333,7 +398,7 @@ final class ImageSync {
 				]
 			);
 
-			return;
+			return false;
 		}
 
 		$this->logger->info(
@@ -352,6 +417,8 @@ final class ImageSync {
 			$product_id,
 			$data
 		);
+
+		return true;
 	}
 
 

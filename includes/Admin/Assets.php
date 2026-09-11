@@ -342,6 +342,9 @@ final class Assets {
 					'process_sku_now' =>
 						'pdxw_promi_process_sku_now',
 
+					'process_sku_images_now' =>
+						'pdxw_promi_process_sku_images_now',
+
 					'add_ignore_sku' =>
 						'pdxw_promi_add_ignore_sku',
 
