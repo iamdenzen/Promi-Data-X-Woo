@@ -44,6 +44,10 @@ final class Frontend {
 
 	private Ajax $ajax;
 
+	private PriceCalculator $price_calculator;
+
+	private PriceCalculatorAjax $price_calculator_ajax;
+
 	private Samples $samples;
 
 	private bool $initialized = false;
@@ -167,6 +171,29 @@ final class Frontend {
 
 		/*
 		|--------------------------------------------------------------------------
+		| Price Calculator
+		|--------------------------------------------------------------------------
+		|
+		| Backs xsimpress-core's [xsimpress_price_calculator] shortcode (and
+		| any later calculator layouts): product resolution, first-position
+		| print options, and the product + print-option price quote used for
+		| both the shortcode's first render and its live AJAX updates.
+		*/
+
+		$this->price_calculator =
+			new PriceCalculator(
+				$this->product_data,
+				$this->printing
+			);
+
+		$this->price_calculator_ajax =
+			new PriceCalculatorAjax(
+				$this->price_calculator
+			);
+
+
+		/*
+		|--------------------------------------------------------------------------
 		| Sample Products
 		|--------------------------------------------------------------------------
 		|
@@ -226,6 +253,15 @@ final class Frontend {
 
 		/*
 		|--------------------------------------------------------------------------
+		| Price Calculator
+		|--------------------------------------------------------------------------
+		*/
+
+		$this->price_calculator_ajax->init();
+
+
+		/*
+		|--------------------------------------------------------------------------
 		| Samples
 		|--------------------------------------------------------------------------
 		*/
@@ -263,6 +299,16 @@ final class Frontend {
 
 	public function ajax(): Ajax {
 		return $this->ajax;
+	}
+
+
+	public function price_calculator(): PriceCalculator {
+		return $this->price_calculator;
+	}
+
+
+	public function price_calculator_ajax(): PriceCalculatorAjax {
+		return $this->price_calculator_ajax;
 	}
 
 
