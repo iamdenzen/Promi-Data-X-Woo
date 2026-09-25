@@ -292,7 +292,7 @@ final class SuppliersPage {
 						<th scope="row"><label for="pdxw-supplier-price-url"><?php esc_html_e( 'Price Feed URL (optional)', 'promi-data-x-woo' ); ?></label></th>
 						<td>
 							<input type="url" id="pdxw-supplier-price-url" class="large-text" value="<?php echo esc_attr( $price_endpoint_url ); ?>" placeholder="https://...">
-							<p class="description"><?php esc_html_e( 'Only used by adapters that get purchase prices from a separate feed than stock (currently PFConcept). Leave empty if this supplier has no separate pricing feed.', 'promi-data-x-woo' ); ?></p>
+							<p class="description"><?php esc_html_e( 'Only used by adapters that get purchase prices from a separate feed than stock (currently PFConcept and Giving Europe). Leave empty if this supplier has no separate pricing feed.', 'promi-data-x-woo' ); ?></p>
 						</td>
 					</tr>
 
