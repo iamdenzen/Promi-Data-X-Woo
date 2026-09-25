@@ -13,9 +13,11 @@ defined( 'ABSPATH' ) || exit;
  * Giving Europe (SKU prefix "A58-").
  *
  * Unlike the other two suppliers, this API does not hand back a feed to
- * filter — it is a query endpoint: GET with product_codes[] (array),
- * offset and limit (max 1000, default 100) as query parameters, returning
- * stock rows for those specific products.
+ * filter — it is a query endpoint: GET with product_codes (a single
+ * comma-separated string, NOT a repeated/array-style query param — sent
+ * any other way, the API silently ignores the filter and returns its
+ * entire catalog instead), offset and limit (max 1000, default 100) as
+ * query parameters, returning stock rows for those specific products.
  *
  * SKU shape:
  *
@@ -253,7 +255,7 @@ final class GivingEuropeAdapter implements SupplierAdapter {
 
 			$request_url = add_query_arg(
 				[
-					'product_codes' => $product_codes,
+					'product_codes' => implode( ',', $product_codes ),
 					'offset'        => $offset,
 					'limit'         => self::RESULT_PAGE_LIMIT,
 				],
