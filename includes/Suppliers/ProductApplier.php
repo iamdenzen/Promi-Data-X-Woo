@@ -18,8 +18,9 @@ defined( 'ABSPATH' ) || exit;
  *
  * Stock and delivery time have no Promi equivalent, so a supplier value
  * always wins. Purchase price does have a Promi equivalent
- * (cx_tier_prices.purchase_price), so it is only written where Promi left
- * a gap — an existing quantity tier with no purchase price yet.
+ * (cx_tier_prices.purchase_price): a supplier price overwrites it when the
+ * supplier has one for that quantity tier, but an existing price is never
+ * cleared just because the supplier doesn't have one to offer.
  */
 final class ProductApplier {
 
@@ -129,26 +130,20 @@ final class ProductApplier {
 
 
 	/**
-	 * Fill missing purchase-price tiers only.
-	 *
-	 * A supplier price is only ever attached to quantity tiers that Promi
-	 * already created (via ProductSync/TieredPricing) but left without a
-	 * purchase price. Products with no existing tiers at all, and tiers
-	 * that already have a purchase price, are left untouched.
+	 * Supplier price wins where the supplier has one; an existing price is
+	 * never cleared just because the supplier doesn't.
 	 *
 	 * purchase_price is a quantity-break "price ladder" (min_qty => price).
-	 * For each gap tier, the applicable price is the one at the highest
-	 * ladder threshold that does not exceed that tier's own quantity — a
-	 * standard price-break lookup. A tier whose quantity is smaller than
-	 * every ladder threshold is left unfilled.
+	 * For each of Promi's own quantity tiers (via ProductSync/TieredPricing)
+	 * on this product: if the supplier has an applicable price — the value
+	 * at the highest ladder threshold not exceeding that tier's own
+	 * quantity — it overwrites whatever purchase price that tier had.
+	 * Otherwise the tier's existing purchase price (if any) is kept as-is.
+	 * Products with no existing tiers at all are left untouched.
 	 */
 	private function apply_purchase_price( WC_Product $product, array $data ): bool {
 
 		$ladder = $data['purchase_price'] ?? [];
-
-		if ( empty( $ladder ) ) {
-			return false;
-		}
 
 		ksort( $ladder );
 
@@ -166,26 +161,32 @@ final class ProductApplier {
 		$existing = $repository->get_purchase_prices_by_quantity( $product_id, $variation_id );
 
 		$combined = [];
-		$filled   = false;
+		$changed  = false;
 
 		foreach ( $targets as $qty ) {
 
+			$supplier_price = $this->price_for_quantity( $ladder, $qty );
+
+			if ( null !== $supplier_price ) {
+
+				$combined[ $qty ] = $supplier_price;
+
+				if (
+					! isset( $existing[ $qty ] )
+					|| abs( (float) $existing[ $qty ] - $supplier_price ) > 0.0001
+				) {
+					$changed = true;
+				}
+
+				continue;
+			}
+
 			if ( isset( $existing[ $qty ] ) ) {
 				$combined[ $qty ] = $existing[ $qty ];
-				continue;
 			}
-
-			$price = $this->price_for_quantity( $ladder, $qty );
-
-			if ( null === $price ) {
-				continue;
-			}
-
-			$combined[ $qty ] = $price;
-			$filled           = true;
 		}
 
-		if ( ! $filled ) {
+		if ( ! $changed ) {
 			return false;
 		}
 
