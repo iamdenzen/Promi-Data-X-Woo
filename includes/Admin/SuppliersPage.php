@@ -199,6 +199,7 @@ final class SuppliersPage {
 		$adapter_key           = $editing->adapter_key ?? '';
 		$enabled               = $editing ? (bool) $editing->enabled : true;
 		$endpoint_url          = $editing->endpoint_url ?? '';
+		$price_endpoint_url    = $editing->price_endpoint_url ?? '';
 		$credential            = $editing->credential ?? '';
 		$sync_interval_minutes = $editing->sync_interval_minutes ?? 60;
 
@@ -284,6 +285,14 @@ final class SuppliersPage {
 						<th scope="row"><label for="pdxw-supplier-url"><?php esc_html_e( 'Endpoint URL', 'promi-data-x-woo' ); ?></label></th>
 						<td>
 							<input type="url" id="pdxw-supplier-url" class="large-text" value="<?php echo esc_attr( $endpoint_url ); ?>" placeholder="https://...">
+						</td>
+					</tr>
+
+					<tr>
+						<th scope="row"><label for="pdxw-supplier-price-url"><?php esc_html_e( 'Price Feed URL (optional)', 'promi-data-x-woo' ); ?></label></th>
+						<td>
+							<input type="url" id="pdxw-supplier-price-url" class="large-text" value="<?php echo esc_attr( $price_endpoint_url ); ?>" placeholder="https://...">
+							<p class="description"><?php esc_html_e( 'Only used by adapters that get purchase prices from a separate feed than stock (currently PFConcept). Leave empty if this supplier has no separate pricing feed.', 'promi-data-x-woo' ); ?></p>
 						</td>
 					</tr>
 

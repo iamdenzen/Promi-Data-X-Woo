@@ -15,7 +15,7 @@ defined( 'ABSPATH' ) || exit;
  */
 final class Database {
 
-	public const VERSION = '1.4.0';
+	public const VERSION = '1.5.0';
 
 	public const VERSION_OPTION = 'pdxw_db_version';
 
@@ -509,6 +509,10 @@ final class Database {
 		|     too different (query-by-SKU vs. bulk GET vs. a deeply nested
 		|     tree) for one generic field-mapping config to cover.
 		|
+		| price_endpoint_url
+		|     Optional second feed URL, only used by adapters that get
+		|     pricing from a separate feed than stock (currently PFConcept).
+		|
 		| sync_interval_minutes
 		|     How often this source is allowed to run, checked against
 		|     last_synced_at by the supplier cron tick.
@@ -528,6 +532,7 @@ final class Database {
 			adapter_key varchar(50) NOT NULL DEFAULT '',
 			enabled tinyint(1) NOT NULL DEFAULT 1,
 			endpoint_url text DEFAULT NULL,
+			price_endpoint_url text DEFAULT NULL,
 			credential varchar(191) NOT NULL DEFAULT '',
 			sync_interval_minutes int unsigned NOT NULL DEFAULT 60,
 			last_synced_at datetime DEFAULT NULL,

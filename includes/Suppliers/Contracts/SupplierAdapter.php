@@ -19,12 +19,17 @@ defined( 'ABSPATH' ) || exit;
 interface SupplierAdapter {
 
 	/**
+	 * purchase_price is a quantity-break "price ladder": a map of
+	 * min_qty => price, e.g. [1 => 3.55, 100 => 3.51, 250 => 3.47]
+	 * meaning that price applies from that quantity upward. `null` (or an
+	 * empty array) means the supplier has no price data for this row.
+	 *
 	 * @return array<string,array{
 	 *     stock_quantity:?int,
 	 *     in_stock:?bool,
 	 *     delivery_days:?int,
 	 *     delivery_text:?string,
-	 *     purchase_price:?float
+	 *     purchase_price:?array<int,float>
 	 * }>|\WP_Error
 	 */
 	public function fetch( object $source, Catalog $catalog ): array|\WP_Error;

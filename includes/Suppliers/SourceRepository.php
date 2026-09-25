@@ -24,6 +24,7 @@ final class SourceRepository {
 		'adapter_key',
 		'enabled',
 		'endpoint_url',
+		'price_endpoint_url',
 		'credential',
 		'sync_interval_minutes',
 	];

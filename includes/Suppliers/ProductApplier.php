@@ -135,14 +135,22 @@ final class ProductApplier {
 	 * already created (via ProductSync/TieredPricing) but left without a
 	 * purchase price. Products with no existing tiers at all, and tiers
 	 * that already have a purchase price, are left untouched.
+	 *
+	 * purchase_price is a quantity-break "price ladder" (min_qty => price).
+	 * For each gap tier, the applicable price is the one at the highest
+	 * ladder threshold that does not exceed that tier's own quantity — a
+	 * standard price-break lookup. A tier whose quantity is smaller than
+	 * every ladder threshold is left unfilled.
 	 */
 	private function apply_purchase_price( WC_Product $product, array $data ): bool {
 
-		$price = $data['purchase_price'] ?? null;
+		$ladder = $data['purchase_price'] ?? [];
 
-		if ( null === $price || $price <= 0 ) {
+		if ( empty( $ladder ) ) {
 			return false;
 		}
+
+		ksort( $ladder );
 
 		$repository = $this->pricing->repository();
 
@@ -167,6 +175,12 @@ final class ProductApplier {
 				continue;
 			}
 
+			$price = $this->price_for_quantity( $ladder, $qty );
+
+			if ( null === $price ) {
+				continue;
+			}
+
 			$combined[ $qty ] = $price;
 			$filled           = true;
 		}
@@ -176,5 +190,28 @@ final class ProductApplier {
 		}
 
 		return $repository->replace_purchase( $product_id, $variation_id, $combined );
+	}
+
+
+	/**
+	 * Resolve the applicable price for one target quantity from a
+	 * min_qty => price ladder, sorted ascending by quantity.
+	 *
+	 * @param array<int,float> $ladder
+	 */
+	private function price_for_quantity( array $ladder, int $qty ): ?float {
+
+		$price = null;
+
+		foreach ( $ladder as $threshold => $ladder_price ) {
+
+			if ( $threshold > $qty ) {
+				break;
+			}
+
+			$price = $ladder_price;
+		}
+
+		return ( null !== $price && $price > 0 ) ? $price : null;
 	}
 }

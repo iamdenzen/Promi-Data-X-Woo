@@ -80,12 +80,23 @@ final class SuppliersAjax {
 			);
 		}
 
+		$price_endpoint_url = $this->request_string( 'price_endpoint_url' );
+
+		if ( '' !== $price_endpoint_url && ! wp_http_validate_url( $price_endpoint_url ) ) {
+
+			wp_send_json_error(
+				[ 'message' => __( 'Please enter a valid price feed URL.', 'promi-data-x-woo' ) ],
+				400
+			);
+		}
+
 		$data = [
 			'name'                  => $this->request_string( 'name' ),
 			'sku_prefix'            => $sku_prefix,
 			'adapter_key'           => sanitize_key( $this->request_string( 'adapter_key' ) ),
 			'enabled'               => $this->request_bool( 'enabled' ) ? 1 : 0,
 			'endpoint_url'          => esc_url_raw( $endpoint_url ),
+			'price_endpoint_url'    => esc_url_raw( $price_endpoint_url ),
 			'credential'            => $this->request_raw_string( 'credential' ),
 			'sync_interval_minutes' => max( 5, $this->request_int( 'sync_interval_minutes', 60 ) ),
 		];

@@ -3119,6 +3119,9 @@
 				endpoint_url:
 					field("#pdxw-supplier-url"),
 
+				price_endpoint_url:
+					field("#pdxw-supplier-price-url"),
+
 				credential:
 					field("#pdxw-supplier-credential")
 			};
