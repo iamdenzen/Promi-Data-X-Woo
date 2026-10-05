@@ -840,12 +840,15 @@ final class Options {
 	): array {
 
 		/*
-		 * A36 (MidOcean) exposes the print technique id directly as
-		 * SupplierPrintCode; its cost rows are "<id>_<n>C_S" / "B", which
-		 * are not print codes. Every other supplier keeps using the bare
-		 * code from the setup-cost row.
+		 * A36 (MidOcean) and A58 (Giving Europe) expose the supplier's print
+		 * code directly as SupplierPrintCode; their cost rows are
+		 * "<id>_<n>C_S" / "B" / "<product>-<id>-S", which are not print
+		 * codes. Every other supplier keeps using the bare code from the
+		 * setup-cost row.
 		 */
-		if ( str_starts_with( (string) ( $imprint['Sku'] ?? '' ), 'A36-' ) ) {
+		$sku = (string) ( $imprint['Sku'] ?? '' );
+
+		if ( str_starts_with( $sku, 'A36-' ) || str_starts_with( $sku, 'A58-' ) ) {
 
 			$print_code = $imprint['SupplierPrintCode'] ?? '';
 

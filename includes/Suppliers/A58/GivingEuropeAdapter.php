@@ -3,6 +3,7 @@
 namespace PromiDataXWoo\Suppliers\A58;
 
 use PromiDataXWoo\Catalog\Catalog;
+use PromiDataXWoo\Suppliers\Contracts\PrintPriceProvider;
 use PromiDataXWoo\Suppliers\Contracts\SupplierAdapter;
 use PromiDataXWoo\Suppliers\Logger;
 use PromiDataXWoo\Suppliers\Support\HttpJson;
@@ -53,7 +54,7 @@ defined( 'ABSPATH' ) || exit;
  * with stock-only data — price is a lower-priority signal than stock and
  * shouldn't block it.
  */
-final class GivingEuropeAdapter implements SupplierAdapter {
+final class GivingEuropeAdapter implements SupplierAdapter, PrintPriceProvider {
 
 	private const PREFIX = 'A58-';
 
@@ -134,6 +135,177 @@ final class GivingEuropeAdapter implements SupplierAdapter {
 		$this->merge_price_feed( $source, $headers, $product_codes, $existing, $normalized );
 
 		return $normalized;
+	}
+
+
+	/**
+	 * Fetch the print methods feed (e.g. .../v1/print_methods).
+	 *
+	 *     { items: [ { code, max_color_quantity, use_single_price_scale,
+	 *         price_scales: [ { color_index, tiers: [ {min_units,
+	 *         net_unit_price} ] } ] } ], limit, offset, total }
+	 *
+	 * "code" is the print code Promi sends as SupplierPrintCode. Unlike the
+	 * product feeds this is a small, unfiltered catalog (~140 methods), so it
+	 * is simply paged through with offset/limit/total.
+	 *
+	 * color_index 1 is the first-colour price and every higher index is the
+	 * price of one *additional* colour, so the n-colour ladder is index 1
+	 * plus indexes 2..n (verified against Promi: selling = purchase / 0.65).
+	 * When use_single_price_scale is set the price does not depend on
+	 * colours at all, so index 1 is used for every colour count.
+	 *
+	 * The feed's setup_price is not applied: Promi's A58 setup/handling
+	 * costs are product-specific and do not equal it, so they are left as
+	 * Promi has them.
+	 */
+	public function fetch_print_prices( object $source ): array|\WP_Error {
+
+		$url = trim( (string) ( $source->print_price_endpoint_url ?? '' ) );
+
+		if ( '' === $url ) {
+
+			return new \WP_Error(
+				'pdxw_supplier_missing_url',
+				__( 'No print price feed URL is configured for this supplier.', 'promi-data-x-woo' )
+			);
+		}
+
+		$headers    = [];
+		$credential = trim( (string) ( $source->credential ?? '' ) );
+
+		if ( '' !== $credential ) {
+			$headers['Authorization'] = 'Bearer ' . $credential;
+		}
+
+		$codes  = [];
+		$offset = 0;
+
+		do {
+
+			$response = $this->http->get(
+				add_query_arg(
+					[
+						'offset' => $offset,
+						'limit'  => self::RESULT_PAGE_LIMIT,
+					],
+					$url
+				),
+				$headers
+			);
+
+			if ( is_wp_error( $response ) ) {
+				return $response;
+			}
+
+			$items = $response['items'] ?? null;
+
+			if ( ! is_array( $items ) ) {
+
+				return new \WP_Error(
+					'pdxw_supplier_invalid_response',
+					__( 'Unexpected Giving Europe print methods response shape.', 'promi-data-x-woo' )
+				);
+			}
+
+			foreach ( $items as $item ) {
+
+				if ( ! is_array( $item ) ) {
+					continue;
+				}
+
+				$code  = trim( (string) ( $item['code'] ?? '' ) );
+				$entry = '' === $code ? null : $this->print_method_entry( $item );
+
+				if ( $entry ) {
+					$codes[ $code ] = $entry;
+				}
+			}
+
+			$total   = is_numeric( $response['total'] ?? null ) ? (int) $response['total'] : count( $items );
+			$offset += count( $items );
+
+		} while ( ! empty( $items ) && $offset < $total );
+
+		return [
+			'codes'    => $codes,
+			'handling' => [],
+		];
+	}
+
+
+	/**
+	 * @return array{variant_by:string,variants:array<string,array{setup:?float,prices:array<int,float>}>}|null
+	 */
+	private function print_method_entry( array $item ): ?array {
+
+		$scales = [];
+
+		foreach ( (array) ( $item['price_scales'] ?? [] ) as $scale ) {
+
+			if ( ! is_array( $scale ) || ! is_numeric( $scale['color_index'] ?? null ) ) {
+				continue;
+			}
+
+			$ladder = [];
+
+			foreach ( (array) ( $scale['tiers'] ?? [] ) as $tier ) {
+
+				$qty   = $tier['min_units'] ?? null;
+				$price = $tier['net_unit_price'] ?? null;
+
+				if ( is_numeric( $qty ) && (int) $qty >= 1 && is_numeric( $price ) ) {
+					$ladder[ (int) $qty ] = (float) $price;
+				}
+			}
+
+			$scales[ (int) $scale['color_index'] ] = $ladder;
+		}
+
+		if ( empty( $scales[1] ) ) {
+			return null;
+		}
+
+		$single     = ! empty( $item['use_single_price_scale'] );
+		$max_colors = max( 1, (int) ( $item['max_color_quantity'] ?? 1 ) );
+		$variants   = [];
+
+		for ( $colors = 1; $colors <= $max_colors; $colors++ ) {
+
+			$ladder = $scales[1];
+
+			if ( ! $single ) {
+
+				for ( $index = 2; $index <= $colors; $index++ ) {
+
+					foreach ( $ladder as $qty => $price ) {
+						$ladder[ $qty ] = $price + ( $scales[ $index ][ $qty ] ?? 0.0 );
+					}
+				}
+			}
+
+			$ladder = array_filter(
+				array_map( static fn( $price ) => round( $price, 4 ), $ladder ),
+				static fn( $price ) => $price > 0
+			);
+
+			if ( $ladder ) {
+
+				ksort( $ladder );
+
+				$variants[ (string) $colors ] = [
+					'setup'  => null,
+					'prices' => $ladder,
+				];
+			}
+		}
+
+		return empty( $variants )
+			? null
+			: [
+				'variant_by' => 'colors',
+				'variants'   => $variants,
+			];
 	}
 
 
