@@ -776,6 +776,11 @@ final class Options {
 
 
 			$fees[] = [
+				'supplier_sku' =>
+					(string) (
+						$cost['SupplierSku'] ?? ''
+					),
+
 				'label' =>
 					$label,
 
@@ -834,9 +839,22 @@ final class Options {
 		array $imprint
 	): array {
 
-		$print_code = $imprint['ImprintCosts'][0]['SupplierSku']
-			?? $imprint['UnstructuredInformation']['PrintCode']
-			?? '';
+		/*
+		 * A36 (MidOcean) exposes the print technique id directly as
+		 * SupplierPrintCode; its cost rows are "<id>_<n>C_S" / "B", which
+		 * are not print codes. Every other supplier keeps using the bare
+		 * code from the setup-cost row.
+		 */
+		if ( str_starts_with( (string) ( $imprint['Sku'] ?? '' ), 'A36-' ) ) {
+
+			$print_code = $imprint['SupplierPrintCode'] ?? '';
+
+		} else {
+
+			$print_code = $imprint['ImprintCosts'][0]['SupplierSku']
+				?? $imprint['UnstructuredInformation']['PrintCode']
+				?? '';
+		}
 
 		$colors = $imprint['PrintColor'] ?? null;
 

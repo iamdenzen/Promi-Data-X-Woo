@@ -11,13 +11,12 @@ defined( 'ABSPATH' ) || exit;
  *
  * Options are matched on cx_print_options.supplier_print_code (the
  * supplier's own code, imported from Promi) — never on our Promi SKU.
- * Only purchase prices and setup purchase amounts are written; selling
- * prices, option names and tier structure remain Promi-owned.
+ * Only purchase prices and setup/handling purchase amounts are written;
+ * selling prices, option names and tier structure remain Promi-owned.
  *
- * Colour-dependent codes use the variant for the option's print_colors
- * (a stored 0 means "no explicit colour count" and uses the 1-colour
- * variant). Codes the adapter did not return (e.g. logo-size dependent)
- * are left untouched.
+ * Which price variant applies to an option is decided by the code's
+ * "variant_by" (see Contracts\PrintPriceProvider). Codes the adapter did
+ * not return (e.g. logo-size dependent) are left untouched.
  */
 final class PrintPriceApplier {
 
@@ -29,16 +28,15 @@ final class PrintPriceApplier {
 
 
 	/**
-	 * @param array<string,array{
-	 *     colors_dependent:bool,
-	 *     variants:array<int,array{setup:?float,prices:array<int,float>}>
-	 * }> $codes
-	 *
+	 * @param array{codes:array,handling:array<string,float>} $prices Adapter output.
 	 * @param string $sku_prefix Source SKU prefix (e.g. "A34-"); print codes are only unique per supplier.
 	 *
 	 * @return array{matched:int,updated:int,unmatched_codes:int}
 	 */
-	public function apply( array $codes, string $sku_prefix ): array {
+	public function apply( array $prices, string $sku_prefix ): array {
+
+		$codes    = $prices['codes'] ?? [];
+		$handling = $prices['handling'] ?? [];
 
 		$matched         = 0;
 		$updated         = 0;
@@ -61,7 +59,7 @@ final class PrintPriceApplier {
 
 			foreach ( $options as $option ) {
 
-				$variant = $this->variant_for( $entry, $option );
+				$variant = $this->variant_for( (string) $code, $entry, $option );
 
 				if ( ! $variant ) {
 					continue;
@@ -84,6 +82,15 @@ final class PrintPriceApplier {
 					);
 				}
 
+				foreach ( $handling as $fee_sku => $amount ) {
+
+					$changed += $this->repository->apply_supplier_handling_purchase(
+						$option_id,
+						(string) $fee_sku,
+						(float) $amount
+					);
+				}
+
 				if ( $changed > 0 ) {
 					++$updated;
 				}
@@ -101,16 +108,28 @@ final class PrintPriceApplier {
 	/**
 	 * @return array{setup:?float,prices:array<int,float>}|null
 	 */
-	private function variant_for( array $entry, object $option ): ?array {
+	private function variant_for( string $code, array $entry, object $option ): ?array {
 
 		$variants = $entry['variants'] ?? [];
 
-		if ( empty( $entry['colors_dependent'] ) ) {
-			return $variants[0] ?? null;
+		switch ( $entry['variant_by'] ?? 'none' ) {
+
+			case 'colors':
+				// A stored 0 means "no explicit colour count": use 1 colour.
+				$key = (string) max( 1, (int) ( $option->print_colors ?? 0 ) );
+				break;
+
+			case 'range':
+				$sku = (string) ( $option->supplier_sku ?? '' );
+				$key = str_starts_with( $sku, $code )
+					? substr( $sku, strlen( $code ) )
+					: '';
+				break;
+
+			default:
+				$key = '0';
 		}
 
-		$colors = max( 1, (int) ( $option->print_colors ?? 0 ) );
-
-		return $variants[ $colors ] ?? null;
+		return $variants[ $key ] ?? null;
 	}
 }

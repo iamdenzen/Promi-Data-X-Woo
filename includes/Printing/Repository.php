@@ -1718,6 +1718,46 @@ final class Repository {
 	}
 
 
+	/**
+	 * Overwrite purchase_amount on an option's handling fee rows carrying
+	 * one specific supplier SKU (e.g. MidOcean manipulation code "B").
+	 *
+	 * @return int Number of fee rows changed.
+	 */
+	public function apply_supplier_handling_purchase(
+		int $option_id,
+		string $supplier_sku,
+		float $amount
+	): int {
+
+		$option_id    = absint( $option_id );
+		$supplier_sku = sanitize_text_field( $supplier_sku );
+
+		if ( ! $option_id || '' === $supplier_sku || $amount <= 0 ) {
+			return 0;
+		}
+
+		$db = $this->db();
+
+		$updated = $db->query(
+			$db->prepare(
+				'UPDATE ' . $this->table( 'fees' ) . "
+				SET purchase_amount = %f
+				WHERE print_option_id = %d
+				AND fee_type = 'handling'
+				AND supplier_sku = %s
+				AND ( purchase_amount IS NULL OR ABS( purchase_amount - %f ) >= 0.00005 )",
+				$amount,
+				$option_id,
+				$supplier_sku,
+				$amount
+			)
+		);
+
+		return false === $updated ? 0 : (int) $updated;
+	}
+
+
 	public function get_fees(
 		int $option_id
 	): array {
@@ -1807,6 +1847,7 @@ final class Repository {
 					%s,
 					%s,
 					%s,
+					%s,
 					%f,
 					{$requirement_placeholder},
 					%f,
@@ -1814,6 +1855,11 @@ final class Repository {
 				)";
 
 				$params[] = $option_id;
+
+				$params[] = sanitize_text_field(
+					$fee['supplier_sku']
+						?? ''
+				);
 
 				$params[] = sanitize_text_field(
 					$fee['label']
@@ -1866,6 +1912,7 @@ final class Repository {
 						"INSERT INTO {$table}
 						(
 							print_option_id,
+							supplier_sku,
 							fee_label,
 							fee_type,
 							calculation,

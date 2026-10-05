@@ -3,6 +3,7 @@
 namespace PromiDataXWoo\Suppliers\A36;
 
 use PromiDataXWoo\Catalog\Catalog;
+use PromiDataXWoo\Suppliers\Contracts\PrintPriceProvider;
 use PromiDataXWoo\Suppliers\Contracts\SupplierAdapter;
 use PromiDataXWoo\Suppliers\Logger;
 use PromiDataXWoo\Suppliers\Support\HttpJson;
@@ -34,7 +35,7 @@ defined( 'ABSPATH' ) || exit;
  * data — price is a lower-priority signal than stock and shouldn't block
  * it.
  */
-final class MidOceanAdapter implements SupplierAdapter {
+final class MidOceanAdapter implements SupplierAdapter, PrintPriceProvider {
 
 	private const PREFIX = 'A36-';
 
@@ -112,6 +113,245 @@ final class MidOceanAdapter implements SupplierAdapter {
 		$this->merge_price_feed( $source, $headers, $normalized );
 
 		return $normalized;
+	}
+
+
+	/**
+	 * Highest colour count a NumberOfColours technique is expanded to.
+	 * Promi currently exposes 1-4; the headroom is harmless.
+	 */
+	private const MAX_COLORS = 8;
+
+	/**
+	 * Fetch the print price list
+	 * (e.g. https://api.midocean.com/gateway/printpricelist/2.0/).
+	 *
+	 * { print_manipulations: [ {code, price} ],
+	 *   print_techniques: [ {id, pricing_type, setup, var_costs: [
+	 *       {range_id, scales: [ {minimum_quantity, price, next_price} ]} ]} ] }
+	 *
+	 * "id" is the print code Promi sends as SupplierPrintCode. Numbers are
+	 * strings with comma decimals and dot thousands ("1.000", "0,87").
+	 * Verified against Promi A36 imprints: selling price = 1.5 x these.
+	 *
+	 *  - NumberOfColours: price + (colours - 1) * next_price, per colour count
+	 *  - NumberOfPositions: one flat ladder
+	 *  - AreaRange: one ladder per range_id (the SupplierSku suffix)
+	 *
+	 * ColourAreaRange / Area techniques are skipped on purpose (no verified
+	 * Promi mapping yet), so those options keep their Promi pricing.
+	 * print_manipulations become the per-piece handling purchase prices,
+	 * matched to Promi's handling fee SKU (e.g. "B").
+	 */
+	public function fetch_print_prices( object $source ): array|\WP_Error {
+
+		$url = trim( (string) ( $source->print_price_endpoint_url ?? '' ) );
+
+		if ( '' === $url ) {
+
+			return new \WP_Error(
+				'pdxw_supplier_missing_url',
+				__( 'No print price feed URL is configured for this supplier.', 'promi-data-x-woo' )
+			);
+		}
+
+		$headers    = [];
+		$credential = trim( (string) ( $source->credential ?? '' ) );
+
+		if ( '' !== $credential ) {
+			$headers['x-Gateway-APIKey'] = $credential;
+		}
+
+		$response = $this->http->get( $url, $headers );
+
+		if ( is_wp_error( $response ) ) {
+			return $response;
+		}
+
+		$techniques = $response['print_techniques'] ?? null;
+
+		if ( ! is_array( $techniques ) ) {
+
+			return new \WP_Error(
+				'pdxw_supplier_invalid_response',
+				__( 'Unexpected MidOcean print price feed shape.', 'promi-data-x-woo' )
+			);
+		}
+
+		$codes = [];
+
+		foreach ( $techniques as $technique ) {
+
+			if ( ! is_array( $technique ) ) {
+				continue;
+			}
+
+			$id   = trim( (string) ( $technique['id'] ?? '' ) );
+			$type = (string) ( $technique['pricing_type'] ?? '' );
+
+			if ( '' === $id ) {
+				continue;
+			}
+
+			$entry = $this->technique_entry( $technique, $type );
+
+			if ( $entry ) {
+				$codes[ $id ] = $entry;
+			}
+		}
+
+		$handling = [];
+
+		foreach ( (array) ( $response['print_manipulations'] ?? [] ) as $manipulation ) {
+
+			$code  = trim( (string) ( $manipulation['code'] ?? '' ) );
+			$price = $this->parse_number( $manipulation['price'] ?? '' );
+
+			if ( '' !== $code && null !== $price && $price > 0 ) {
+				$handling[ $code ] = $price;
+			}
+		}
+
+		return [
+			'codes'    => $codes,
+			'handling' => $handling,
+		];
+	}
+
+
+	/**
+	 * @return array{variant_by:string,variants:array<string,array{setup:?float,prices:array<int,float>}>}|null
+	 */
+	private function technique_entry( array $technique, string $type ): ?array {
+
+		$setup     = $this->parse_number( $technique['setup'] ?? '' );
+		$var_costs = array_values( array_filter( (array) ( $technique['var_costs'] ?? [] ), 'is_array' ) );
+
+		if ( empty( $var_costs ) ) {
+			return null;
+		}
+
+		$variants = [];
+
+		switch ( $type ) {
+
+			case 'NumberOfColours':
+
+				$variant_by = 'colors';
+
+				for ( $colors = 1; $colors <= self::MAX_COLORS; $colors++ ) {
+
+					$prices = $this->ladder( $var_costs[0], $colors - 1 );
+
+					if ( $prices ) {
+
+						$variants[ (string) $colors ] = [
+							'setup'  => $setup,
+							'prices' => $prices,
+						];
+					}
+				}
+
+				break;
+
+			case 'NumberOfPositions':
+
+				$variant_by = 'none';
+				$prices     = $this->ladder( $var_costs[0], 0 );
+
+				if ( $prices ) {
+
+					$variants['0'] = [
+						'setup'  => $setup,
+						'prices' => $prices,
+					];
+				}
+
+				break;
+
+			case 'AreaRange':
+
+				$variant_by = 'range';
+
+				foreach ( $var_costs as $var_cost ) {
+
+					$range  = trim( (string) ( $var_cost['range_id'] ?? '' ) );
+					$prices = $this->ladder( $var_cost, 0 );
+
+					if ( '' !== $range && $prices ) {
+
+						$variants[ $range ] = [
+							'setup'  => $setup,
+							'prices' => $prices,
+						];
+					}
+				}
+
+				break;
+
+			default:
+				return null;
+		}
+
+		return empty( $variants )
+			? null
+			: [
+				'variant_by' => $variant_by,
+				'variants'   => $variants,
+			];
+	}
+
+
+	/**
+	 * One quantity-break ladder from a var_costs entry:
+	 * price + $extra_colours * next_price at every scale.
+	 *
+	 * Placeholder prices below 0.01 (the feed uses "0,001" for unused
+	 * techniques) are dropped.
+	 *
+	 * @return array<int,float>
+	 */
+	private function ladder( array $var_cost, int $extra_colors ): array {
+
+		$ladder = [];
+
+		foreach ( (array) ( $var_cost['scales'] ?? [] ) as $scale ) {
+
+			$qty   = $this->parse_number( $scale['minimum_quantity'] ?? '' );
+			$price = $this->parse_number( $scale['price'] ?? '' );
+			$next  = $this->parse_number( $scale['next_price'] ?? '' ) ?? 0.0;
+
+			if ( null === $qty || $qty < 1 || null === $price ) {
+				continue;
+			}
+
+			$total = $price + $extra_colors * $next;
+
+			if ( $total >= 0.01 ) {
+				$ladder[ (int) $qty ] = round( $total, 4 );
+			}
+		}
+
+		ksort( $ladder );
+
+		return $ladder;
+	}
+
+
+	/**
+	 * "1.000" -> 1000.0, "0,87" -> 0.87, "" -> null.
+	 */
+	private function parse_number( mixed $value ): ?float {
+
+		$value = trim( (string) $value );
+
+		if ( '' === $value ) {
+			return null;
+		}
+
+		$value = str_replace( ',', '.', str_replace( '.', '', $value ) );
+
+		return is_numeric( $value ) ? (float) $value : null;
 	}
 
 

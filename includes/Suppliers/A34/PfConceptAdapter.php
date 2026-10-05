@@ -182,13 +182,16 @@ final class PfConceptAdapter implements SupplierAdapter, PrintPriceProvider {
 			if ( ! empty( $variants ) ) {
 
 				$codes[ $code ] = [
-					'colors_dependent' => $colors_dependent,
-					'variants'         => $variants,
+					'variant_by' => $colors_dependent ? 'colors' : 'none',
+					'variants'   => $variants,
 				];
 			}
 		}
 
-		return $codes;
+		return [
+			'codes'    => $codes,
+			'handling' => [],
+		];
 	}
 
 

@@ -15,7 +15,7 @@ defined( 'ABSPATH' ) || exit;
  */
 final class Database {
 
-	public const VERSION = '1.5.2';
+	public const VERSION = '1.5.3';
 
 	public const VERSION_OPTION = 'pdxw_db_version';
 
@@ -430,6 +430,7 @@ final class Database {
 		$sql = "CREATE TABLE {$table} (
 			id bigint unsigned NOT NULL AUTO_INCREMENT,
 			print_option_id bigint unsigned NOT NULL,
+			supplier_sku varchar(100) DEFAULT '',
 			fee_label varchar(255) DEFAULT NULL,
 			fee_type varchar(50) NOT NULL,
 			calculation varchar(50) NOT NULL,
