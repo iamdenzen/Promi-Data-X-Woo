@@ -3122,6 +3122,9 @@
 				price_endpoint_url:
 					field("#pdxw-supplier-price-url"),
 
+				print_price_endpoint_url:
+					field("#pdxw-supplier-print-price-url"),
+
 				credential:
 					field("#pdxw-supplier-credential")
 			};

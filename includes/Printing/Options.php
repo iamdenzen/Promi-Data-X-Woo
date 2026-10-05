@@ -121,6 +121,20 @@ final class Options {
 
 			/*
 			|--------------------------------------------------------------------------
+			| Supplier Matching Data
+			|--------------------------------------------------------------------------
+			|
+			| Used to match supplier print-price feeds, which are keyed by the
+			| supplier's own print code rather than our Promi SKU.
+			*/
+
+			$supplier_data = $this->supplier_match_data(
+				$imprint
+			);
+
+
+			/*
+			|--------------------------------------------------------------------------
 			| Create / Update
 			|--------------------------------------------------------------------------
 			*/
@@ -138,7 +152,7 @@ final class Options {
 				$this->repository
 					->update_option(
 						$option_id,
-						[
+						$supplier_data + [
 							'name' =>
 								$name,
 
@@ -164,7 +178,7 @@ final class Options {
 				$option_id =
 					$this->repository
 						->insert_option(
-							[
+							$supplier_data + [
 								'sku' =>
 									$sku,
 
@@ -807,6 +821,36 @@ final class Options {
 	| Mapping Helpers
 	|--------------------------------------------------------------------------
 	*/
+
+	/**
+	 * Supplier identifiers from one Promi ImprintReference.
+	 *
+	 * - supplier_sku: full SupplierSku, e.g. "PAD04-1"
+	 * - supplier_print_code: bare print code, e.g. "PAD04" (taken from the
+	 *   setup-cost row, falling back to UnstructuredInformation.PrintCode)
+	 * - print_colors: PrintColor, null when Promi does not send it
+	 */
+	private function supplier_match_data(
+		array $imprint
+	): array {
+
+		$print_code = $imprint['ImprintCosts'][0]['SupplierSku']
+			?? $imprint['UnstructuredInformation']['PrintCode']
+			?? '';
+
+		$colors = $imprint['PrintColor'] ?? null;
+
+		return [
+			'supplier_sku'        => (string) (
+				$imprint['SupplierSku'] ?? ''
+			),
+			'supplier_print_code' => (string) $print_code,
+			'print_colors'        => is_numeric( $colors )
+				? (int) $colors
+				: null,
+		];
+	}
+
 
 	/**
 	 * Promi price data used by the existing importer.

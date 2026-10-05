@@ -15,7 +15,7 @@ defined( 'ABSPATH' ) || exit;
  */
 final class Database {
 
-	public const VERSION = '1.5.0';
+	public const VERSION = '1.5.2';
 
 	public const VERSION_OPTION = 'pdxw_db_version';
 
@@ -365,12 +365,16 @@ final class Database {
 		$sql = "CREATE TABLE {$table} (
 			id bigint unsigned NOT NULL AUTO_INCREMENT,
 			sku varchar(100) DEFAULT '',
+			supplier_sku varchar(100) DEFAULT '',
+			supplier_print_code varchar(50) DEFAULT '',
+			print_colors tinyint unsigned DEFAULT NULL,
 			name varchar(255) NOT NULL,
 			max_colors int unsigned NOT NULL DEFAULT 0,
 			min_order_qty int unsigned NOT NULL DEFAULT 1,
 			created_at datetime DEFAULT CURRENT_TIMESTAMP,
 			PRIMARY KEY  (id),
 			KEY sku_idx (sku),
+			KEY supplier_print_code_idx (supplier_print_code),
 			KEY name_idx (name)
 		) {$charset};";
 
@@ -513,6 +517,11 @@ final class Database {
 		|     Optional second feed URL, only used by adapters that get
 		|     pricing from a separate feed than stock (currently PFConcept).
 		|
+		| print_price_endpoint_url
+		|     Optional print/decoration price feed, only used by adapters
+		|     implementing Contracts\PrintPriceProvider (currently PFConcept).
+		|     Applied to cx_print_options by supplier_print_code.
+		|
 		| sync_interval_minutes
 		|     How often this source is allowed to run, checked against
 		|     last_synced_at by the supplier cron tick.
@@ -533,6 +542,7 @@ final class Database {
 			enabled tinyint(1) NOT NULL DEFAULT 1,
 			endpoint_url text DEFAULT NULL,
 			price_endpoint_url text DEFAULT NULL,
+			print_price_endpoint_url text DEFAULT NULL,
 			credential varchar(191) NOT NULL DEFAULT '',
 			sync_interval_minutes int unsigned NOT NULL DEFAULT 60,
 			last_synced_at datetime DEFAULT NULL,

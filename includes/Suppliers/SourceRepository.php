@@ -25,6 +25,7 @@ final class SourceRepository {
 		'enabled',
 		'endpoint_url',
 		'price_endpoint_url',
+		'print_price_endpoint_url',
 		'credential',
 		'sync_interval_minutes',
 	];

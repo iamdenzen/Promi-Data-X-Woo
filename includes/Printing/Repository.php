@@ -481,31 +481,35 @@ final class Repository {
 
 		$db = $this->db();
 
+		$row     = [
+			'sku' => sanitize_text_field(
+				$data['sku'] ?? ''
+			),
+			'name' => sanitize_text_field(
+				$data['name'] ?? ''
+			),
+			'min_order_qty' => max(
+				1,
+				absint(
+					$data['min_order_qty'] ?? 1
+				)
+			),
+			'max_colors' => absint(
+				$data['max_colors'] ?? 0
+			),
+		];
+		$formats = [ '%s', '%s', '%d', '%d' ];
+
+		$this->add_supplier_columns(
+			$data,
+			$row,
+			$formats
+		);
+
 		$result = $db->insert(
 			$this->table( 'options' ),
-			[
-				'sku' => sanitize_text_field(
-					$data['sku'] ?? ''
-				),
-				'name' => sanitize_text_field(
-					$data['name'] ?? ''
-				),
-				'min_order_qty' => max(
-					1,
-					absint(
-						$data['min_order_qty'] ?? 1
-					)
-				),
-				'max_colors' => absint(
-					$data['max_colors'] ?? 0
-				),
-			],
-			[
-				'%s',
-				'%s',
-				'%d',
-				'%d',
-			]
+			$row,
+			$formats
 		);
 
 		if ( false === $result ) {
@@ -523,30 +527,35 @@ final class Repository {
 		array $data
 	): bool {
 
+		$row     = [
+			'name' => sanitize_text_field(
+				$data['name'] ?? ''
+			),
+			'min_order_qty' => max(
+				1,
+				absint(
+					$data['min_order_qty'] ?? 1
+				)
+			),
+			'max_colors' => absint(
+				$data['max_colors'] ?? 0
+			),
+		];
+		$formats = [ '%s', '%d', '%d' ];
+
+		$this->add_supplier_columns(
+			$data,
+			$row,
+			$formats
+		);
+
 		$result = $this->db()->update(
 			$this->table( 'options' ),
-			[
-				'name' => sanitize_text_field(
-					$data['name'] ?? ''
-				),
-				'min_order_qty' => max(
-					1,
-					absint(
-						$data['min_order_qty'] ?? 1
-					)
-				),
-				'max_colors' => absint(
-					$data['max_colors'] ?? 0
-				),
-			],
+			$row,
 			[
 				'id' => absint( $option_id ),
 			],
-			[
-				'%s',
-				'%d',
-				'%d',
-			],
+			$formats,
 			[
 				'%d',
 			]
@@ -555,6 +564,42 @@ final class Repository {
 		$this->clear_option_cache();
 
 		return false !== $result;
+	}
+
+
+	/**
+	 * Append the supplier-matching columns to an insert/update row.
+	 *
+	 * Only keys present in $data are written, so manual admin edits
+	 * (which never send them) cannot blank values stored by the Promi
+	 * import. A null print_colors is written as SQL NULL.
+	 */
+	private function add_supplier_columns(
+		array $data,
+		array &$row,
+		array &$formats
+	): void {
+
+		if ( array_key_exists( 'supplier_sku', $data ) ) {
+			$row['supplier_sku'] = sanitize_text_field(
+				(string) $data['supplier_sku']
+			);
+			$formats[]           = '%s';
+		}
+
+		if ( array_key_exists( 'supplier_print_code', $data ) ) {
+			$row['supplier_print_code'] = sanitize_text_field(
+				(string) $data['supplier_print_code']
+			);
+			$formats[]                  = '%s';
+		}
+
+		if ( array_key_exists( 'print_colors', $data ) ) {
+			$row['print_colors'] = null === $data['print_colors']
+				? null
+				: absint( $data['print_colors'] );
+			$formats[]           = '%d';
+		}
 	}
 
 
@@ -674,6 +719,39 @@ final class Repository {
 	}
 
 
+	/**
+	 * Options sharing one supplier print code (join key for supplier
+	 * print-price feeds). Optionally narrowed to one colour count.
+	 */
+	public function get_options_by_print_code(
+		string $print_code,
+		?int $colors = null,
+		string $sku_prefix = ''
+	): array {
+
+		$db   = $this->db();
+		$sql  = 'SELECT *
+			FROM ' . $this->table( 'options' ) . '
+			WHERE supplier_print_code = %s';
+		$args = [ sanitize_text_field( $print_code ) ];
+
+		if ( null !== $colors ) {
+			$sql   .= ' AND print_colors = %d';
+			$args[] = absint( $colors );
+		}
+
+		// Print codes are only unique per supplier, so scope by SKU prefix.
+		if ( '' !== $sku_prefix ) {
+			$sql   .= ' AND sku LIKE %s';
+			$args[] = $db->esc_like( sanitize_text_field( $sku_prefix ) ) . '%';
+		}
+
+		return $db->get_results(
+			$db->prepare( $sql, ...$args )
+		);
+	}
+
+
 	public function get_options(
 		bool $use_cache = true
 	): array {
@@ -696,6 +774,9 @@ final class Repository {
 				id,
 				name,
 				sku,
+				supplier_sku,
+				supplier_print_code,
+				print_colors,
 				min_order_qty,
 				max_colors
 			FROM ' . $this->table( 'options' ) . '
@@ -1521,6 +1602,121 @@ final class Repository {
 	| Fees
 	|--------------------------------------------------------------------------
 	*/
+
+	/**
+	 * Overwrite purchase_price on an option's existing price tiers from a
+	 * supplier quantity-break ladder (min_qty => price).
+	 *
+	 * Selling prices and the tier structure are never touched. For each
+	 * existing tier the applicable supplier price is the one at the highest
+	 * ladder threshold not exceeding the tier's quantity; tiers with no
+	 * applicable supplier price keep their current purchase price.
+	 *
+	 * @param array<int,float> $ladder
+	 * @return int Number of tiers changed.
+	 */
+	public function apply_supplier_purchase_ladder(
+		int $option_id,
+		array $ladder
+	): int {
+
+		$option_id = absint( $option_id );
+
+		if ( ! $option_id || empty( $ladder ) ) {
+			return 0;
+		}
+
+		ksort( $ladder, SORT_NUMERIC );
+
+		$db    = $this->db();
+		$table = $this->table( 'prices' );
+
+		$rows = $db->get_results(
+			$db->prepare(
+				"SELECT id, min_qty, purchase_price
+				FROM {$table}
+				WHERE print_option_id = %d",
+				$option_id
+			)
+		);
+
+		$changed = 0;
+
+		foreach ( $rows as $row ) {
+
+			$price = null;
+
+			foreach ( $ladder as $threshold => $ladder_price ) {
+
+				if ( $threshold > (int) $row->min_qty ) {
+					break;
+				}
+
+				$price = $ladder_price;
+			}
+
+			if ( null === $price || $price <= 0 ) {
+				continue;
+			}
+
+			if (
+				null !== $row->purchase_price
+				&& abs( (float) $row->purchase_price - $price ) < 0.00005
+			) {
+				continue;
+			}
+
+			$updated = $db->update(
+				$table,
+				[ 'purchase_price' => $price ],
+				[ 'id' => (int) $row->id ],
+				[ '%f' ],
+				[ '%d' ]
+			);
+
+			if ( $updated ) {
+				++$changed;
+			}
+		}
+
+		return $changed;
+	}
+
+
+	/**
+	 * Overwrite purchase_amount on an option's setup fee rows.
+	 *
+	 * @return int Number of fee rows changed.
+	 */
+	public function apply_supplier_setup_purchase(
+		int $option_id,
+		float $setup
+	): int {
+
+		$option_id = absint( $option_id );
+
+		if ( ! $option_id || $setup <= 0 ) {
+			return 0;
+		}
+
+		$db = $this->db();
+
+		$updated = $db->query(
+			$db->prepare(
+				'UPDATE ' . $this->table( 'fees' ) . "
+				SET purchase_amount = %f
+				WHERE print_option_id = %d
+				AND fee_type = 'setup'
+				AND ( purchase_amount IS NULL OR ABS( purchase_amount - %f ) >= 0.00005 )",
+				$setup,
+				$option_id,
+				$setup
+			)
+		);
+
+		return false === $updated ? 0 : (int) $updated;
+	}
+
 
 	public function get_fees(
 		int $option_id

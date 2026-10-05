@@ -72,12 +72,15 @@ final class Suppliers {
 
 		$this->applier = new ProductApplier( $this->pricing );
 
+		$printing = $this->plugin->printing();
+
 		$this->sync = new Sync(
 			$this->adapters,
 			$this->applier,
 			$this->catalog,
 			$this->sources,
-			$this->logger
+			$this->logger,
+			$printing ? new PrintPriceApplier( $printing->repository() ) : null
 		);
 
 		$this->cron = new Cron( $this->sources, $this->sync );

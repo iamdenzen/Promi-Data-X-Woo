@@ -3,6 +3,7 @@
 namespace PromiDataXWoo\Suppliers\A34;
 
 use PromiDataXWoo\Catalog\Catalog;
+use PromiDataXWoo\Suppliers\Contracts\PrintPriceProvider;
 use PromiDataXWoo\Suppliers\Contracts\SupplierAdapter;
 use PromiDataXWoo\Suppliers\Logger;
 use PromiDataXWoo\Suppliers\Support\HttpJson;
@@ -35,7 +36,7 @@ defined( 'ABSPATH' ) || exit;
  * sync continues with stock-only data — price is a lower-priority signal
  * than stock and shouldn't block it.
  */
-final class PfConceptAdapter implements SupplierAdapter {
+final class PfConceptAdapter implements SupplierAdapter, PrintPriceProvider {
 
 	private const PREFIX = 'A34-';
 
@@ -86,6 +87,155 @@ final class PfConceptAdapter implements SupplierAdapter {
 		$this->merge_price_feed( $source, $normalized );
 
 		return $normalized;
+	}
+
+
+	/**
+	 * Fetch the print (decoration) price feed.
+	 *
+	 * Shape:
+	 *
+	 *     PFCPrintpricefeed.decoCharges.decoCharge[]
+	 *       .printCode, .priceDependence (None | Colors | Size)
+	 *       .logoSizes[].logoSize[].amountColors[].amountColor[]
+	 *         .amountColorsId ("1".."4" or "Full color")
+	 *         .amountSetupCharges[].amountSetupCharge[]
+	 *           .setupCharge, .decoPrices[].decoPrice[]{decoPriceFromQty, price}
+	 *
+	 * Only None/Colors codes are returned. Size-dependent codes are skipped
+	 * on purpose: Promi has no logo-size field to match them on, so they
+	 * keep their Promi pricing.
+	 */
+	public function fetch_print_prices( object $source ): array|\WP_Error {
+
+		$url = trim( (string) ( $source->print_price_endpoint_url ?? '' ) );
+
+		if ( '' === $url ) {
+
+			return new \WP_Error(
+				'pdxw_supplier_missing_url',
+				__( 'No print price feed URL is configured for this supplier.', 'promi-data-x-woo' )
+			);
+		}
+
+		$response = $this->http->get( $url );
+
+		if ( is_wp_error( $response ) ) {
+			return $response;
+		}
+
+		$charges = $response['PFCPrintpricefeed']['decoCharges']['decoCharge'] ?? null;
+
+		if ( ! is_array( $charges ) ) {
+
+			return new \WP_Error(
+				'pdxw_supplier_invalid_response',
+				__( 'Unexpected PFConcept print price feed shape.', 'promi-data-x-woo' )
+			);
+		}
+
+		$codes = [];
+
+		foreach ( $charges as $charge ) {
+
+			if ( ! is_array( $charge ) ) {
+				continue;
+			}
+
+			$code       = trim( (string) ( $charge['printCode'] ?? '' ) );
+			$dependence = (string) ( $charge['priceDependence'] ?? '' );
+
+			if ( '' === $code || ! in_array( $dependence, [ 'None', 'Colors' ], true ) ) {
+				continue;
+			}
+
+			$colors_dependent = 'Colors' === $dependence;
+			$variants         = [];
+
+			foreach ( (array) ( $charge['logoSizes'] ?? [] ) as $logo_sizes ) {
+
+				foreach ( (array) ( $logo_sizes['logoSize'] ?? [] ) as $logo_size ) {
+
+					foreach ( (array) ( $logo_size['amountColors'] ?? [] ) as $amount_colors ) {
+
+						foreach ( (array) ( $amount_colors['amountColor'] ?? [] ) as $amount_color ) {
+
+							$key = $colors_dependent
+								? (int) ( $amount_color['amountColorsId'] ?? 0 )
+								: 0;
+
+							if ( $colors_dependent && $key < 1 ) {
+								continue;
+							}
+
+							$variant = $this->variant_from_amount_color( $amount_color );
+
+							// First logo size wins; None/Colors codes only have one.
+							if ( $variant && ! isset( $variants[ $key ] ) ) {
+								$variants[ $key ] = $variant;
+							}
+						}
+					}
+				}
+			}
+
+			if ( ! empty( $variants ) ) {
+
+				$codes[ $code ] = [
+					'colors_dependent' => $colors_dependent,
+					'variants'         => $variants,
+				];
+			}
+		}
+
+		return $codes;
+	}
+
+
+	/**
+	 * @return array{setup:?float,prices:array<int,float>}|null
+	 */
+	private function variant_from_amount_color( mixed $amount_color ): ?array {
+
+		if ( ! is_array( $amount_color ) ) {
+			return null;
+		}
+
+		foreach ( (array) ( $amount_color['amountSetupCharges'] ?? [] ) as $setup_group ) {
+
+			foreach ( (array) ( $setup_group['amountSetupCharge'] ?? [] ) as $setup ) {
+
+				$prices = [];
+
+				foreach ( (array) ( $setup['decoPrices'] ?? [] ) as $price_group ) {
+
+					foreach ( (array) ( $price_group['decoPrice'] ?? [] ) as $row ) {
+
+						$qty   = $row['decoPriceFromQty'] ?? null;
+						$price = $row['price'] ?? null;
+
+						if ( is_numeric( $qty ) && is_numeric( $price ) && (float) $price > 0 ) {
+							$prices[ (int) $qty ] = (float) $price;
+						}
+					}
+				}
+
+				if ( empty( $prices ) ) {
+					continue;
+				}
+
+				ksort( $prices );
+
+				$setup_charge = $setup['setupCharge'] ?? null;
+
+				return [
+					'setup'  => is_numeric( $setup_charge ) ? (float) $setup_charge : null,
+					'prices' => $prices,
+				];
+			}
+		}
+
+		return null;
 	}
 
 
