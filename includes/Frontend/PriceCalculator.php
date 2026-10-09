@@ -468,8 +468,12 @@ final class PriceCalculator {
 				(float) ( $breakdown['fees'] ?? 0.0 );
 		}
 
-		$unit_price = $product_unit_price + $option_unit_price;
-		$total      = ( $unit_price * $quantity ) + $fees;
+		// Unit prices are already 2-decimal amounts; round only to strip float
+		// noise. Total = rounded line + fees (each rounded once).
+		$unit_price = \PromiDataXWoo\Pricing\SellingPriceCalculator::round_money( $product_unit_price + $option_unit_price );
+		$total      = \PromiDataXWoo\Pricing\SellingPriceCalculator::round_money(
+			\PromiDataXWoo\Pricing\SellingPriceCalculator::round_money( $unit_price * $quantity ) + $fees
+		);
 
 		return [
 			'product_id'         => $product_id,

@@ -18,7 +18,7 @@ defined( 'ABSPATH' ) || exit;
  * - Calculate purchase-side fees.
  * - Apply finishing markup to fees.
  * - Round setup fees to the nearest whole euro.
- * - Leave ongoing printing / decoration unrounded.
+ * - Round ongoing printing / decoration unit prices and fees once, to cents.
  * - Produce the final selling-side printing amount used by the Pricing Engine.
  *
  * Important:
@@ -766,7 +766,7 @@ final class Calculator {
 				 *         ×
 				 *     finishing markup
 				 *
-				 * NO rounding.
+				 * Rounded once to cents (SellingPriceCalculator::ongoing()).
 				 */
 				$customer_unit_price =
 					$this->selling_prices
@@ -787,9 +787,13 @@ final class Calculator {
 					$customer_unit_price;
 
 
+				// $customer_unit_price is already rounded to cents (once, in
+				// SellingPriceCalculator), so the line is exact.
 				$print_total +=
-					$customer_unit_price
-					* $quantity;
+					SellingPriceCalculator::round_money(
+						$customer_unit_price
+						* $quantity
+					);
 			}
 
 
@@ -949,14 +953,39 @@ final class Calculator {
 		}
 
 
+		// Re-round the sums of already-rounded amounts to strip float noise.
+		$unit_print_price =
+			SellingPriceCalculator::round_money(
+				$unit_print_price
+			);
+
+		$print_total =
+			SellingPriceCalculator::round_money(
+				$print_total
+			);
+
+		$setup_total =
+			SellingPriceCalculator::round_money(
+				$setup_total
+			);
+
+		$ongoing_fee_total =
+			SellingPriceCalculator::round_money(
+				$ongoing_fee_total
+			);
+
 		$fees_total =
-			$setup_total
-			+ $ongoing_fee_total;
+			SellingPriceCalculator::round_money(
+				$setup_total
+				+ $ongoing_fee_total
+			);
 
 
 		$total =
-			$print_total
-			+ $fees_total;
+			SellingPriceCalculator::round_money(
+				$print_total
+				+ $fees_total
+			);
 
 
 		return [
@@ -989,7 +1018,10 @@ final class Calculator {
 			 * is multiplied by quantity.
 			 *
 			 * Fixed/setup amounts therefore have to be apportioned across
-			 * the line quantity.
+			 * the line quantity. Deliberately NOT rounded: the cart keeps
+			 * full precision so per_unit × quantity gives back exactly
+			 * 'total' (WooCommerce rounds the line once, to cents). The
+			 * customer-facing unit price is 'unit_price' (without fees).
 			 */
 			'per_unit' =>
 				(float) (
@@ -1111,8 +1143,10 @@ final class Calculator {
 
 
 		$print_total =
-			$unit_price
-			* $quantity;
+			SellingPriceCalculator::round_money(
+				$unit_price
+				* $quantity
+			);
 
 
 		/*
@@ -1230,12 +1264,16 @@ final class Calculator {
 				(float) $print_total,
 
 			'fees' =>
-				(float) $fee_total,
+				SellingPriceCalculator::round_money(
+					(float) $fee_total
+				),
 
 			'total' =>
-				(float) (
-					$print_total
-					+ $fee_total
+				SellingPriceCalculator::round_money(
+					(float) (
+						$print_total
+						+ $fee_total
+					)
 				),
 		];
 	}

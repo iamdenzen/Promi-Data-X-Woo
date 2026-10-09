@@ -391,26 +391,27 @@ final class CartPricing {
 
 		/*
 		|--------------------------------------------------------------------------
-		| Round Once, At The Boundary
+		| Do NOT round the unit price here
 		|--------------------------------------------------------------------------
 		|
-		| $final_unit previously carried full calculation precision (e.g.
-		| 2.3456) all the way into WooCommerce. WooCommerce's own price
-		| display rounds to wc_get_price_decimals() (default 2) when
-		| showing the unit price, but WC_Cart still multiplies the raw
-		| unrounded value by quantity for the actual line total. At high
-		| quantities that mismatch becomes visible: a displayed "2.35"
-		| unit price does not actually multiply out to qty x 2.35.
+		| The customer-facing unit prices (article, printing) are already
+		| rounded once to cents by SellingPriceCalculator. $final_unit is
+		| article_unit + (printing + fees) / quantity, i.e. it carries the
+		| apportioned setup fees, which cannot be represented exactly in
+		| 2 decimals (57 € / 7 = 8.142857…).
 		|
-		| Rounding here, once, before the price is committed to
-		| WooCommerce, makes the displayed unit price and the real
-		| quantity-multiplied total agree exactly.
+		| Rounding it to cents before WooCommerce multiplies by quantity
+		| lost or gained cents per piece (8.14 × 7 = 56.98 instead of 57.00;
+		| at 5,000 pieces a half-cent error is 25 €).
+		|
+		| So the exact value goes to WooCommerce, which rounds the LINE once
+		| to cents: round( $final_unit × quantity ) == $line_total below.
 		*/
 
-		$final_unit =
-			(float) wc_format_decimal(
-				$final_unit,
-				wc_get_price_decimals()
+		$line_total =
+			SellingPriceCalculator::round_money(
+				$final_unit
+				* $quantity
 			);
 
 
@@ -455,13 +456,9 @@ final class CartPricing {
 
 		/*
 		 * Per-unit printing price across every print position/option
-		 * attached to this product (no fees included).
-		 *
-		 * Rounded immediately, then multiplied by quantity for
-		 * printing_total below — the same "round once, at the boundary"
-		 * rule used for $final_unit — so printing_unit_price × quantity
-		 * always exactly equals printing_total on this specific row,
-		 * which is the invariant a customer would actually check.
+		 * attached to this product (no fees included). Already a sum of
+		 * 2-decimal unit prices; money() only strips float noise.
+		 * printing_unit_price × quantity == printing_total on this row.
 		 */
 		$printing_unit_price =
 			$this->money(
@@ -553,17 +550,14 @@ final class CartPricing {
 		|     unit_price            actual WooCommerce per-unit price
 		|     line_total            actual WooCommerce line total
 		|
-		| base_total and printing_total are each rounded per-unit first,
-		| so they always agree exactly with their own displayed unit
-		| price row. unit_price/line_total are rounded independently
-		| (from the combined base+printing+fees per-unit amount, since
-		| that's the single number WooCommerce actually bills) — so
-		| line_total is normally, but not guaranteed to be, exactly equal
-		| to base_total + printing_total + fees_total; it can differ by a
-		| very small amount (typically a cent or less) due to rounding at
-		| a different aggregation point. unit_price/line_total are always
-		| the authoritative charged amount; the component fields are for
-		| display/breakdown purposes.
+		| Rounding policy: every unit price is a 2-decimal amount (rounded
+		| once, in SellingPriceCalculator); every line is that unit price
+		| × quantity, rounded to cents; line_total is the sum of the lines
+		| and is exactly what WooCommerce bills (it receives the unrounded
+		| line_total / quantity as price and rounds the line once).
+		|
+		| unit_price is article + printing per piece WITHOUT fees, so
+		| unit_price × quantity + fees_total == line_total.
 		*/
 
 		$cart_item[
@@ -635,15 +629,35 @@ final class CartPricing {
 			|----------------------------------------------------------------
 			*/
 
+			/*
+			 * Customer-facing unit price: article + printing, per piece,
+			 * WITHOUT setup/ongoing fees (same as the product page's
+			 * "Stückpreis"). Both parts are already 2-decimal amounts.
+			 */
 			'unit_price' =>
-				$this->money(
-					$final_unit
-				),
+				null !== $base_unit_price
+					? SellingPriceCalculator::round_money(
+						$base_unit_price
+						+ $printing_unit_price
+					)
+					: $this->money(
+						$final_unit
+					),
 
+			/*
+			 * What WooCommerce actually multiplies by quantity: the unit
+			 * price including the apportioned fees, at full precision
+			 * (diagnostic only — never show this to customers).
+			 */
+			'wc_unit_price' =>
+				$final_unit,
+
+			/*
+			 * Authoritative charged line amount, rounded once to cents.
+			 * Equals base_total + printing_total + fees_total.
+			 */
 			'line_total' =>
-				$this->money(
-					$final_unit * $quantity
-				),
+				$line_total,
 
 			/*
 			|----------------------------------------------------------------

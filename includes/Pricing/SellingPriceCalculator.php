@@ -11,19 +11,24 @@ defined( 'ABSPATH' ) || exit;
  *
  * Article:
  *
- *     cost × (1 + markup / 100)
+ *     cost × (1 + markup / 100)  → rounded ONCE to cents
  *
  * Printing / decoration:
  *
- *     cost × (1 + finishing markup / 100)
+ *     cost × (1 + finishing markup / 100)  → rounded ONCE to cents
  *
  * Setup:
  *
- *     marked-up amount → nearest whole euro
+ *     marked-up amount (unrounded) → nearest whole euro
  *
  * Ongoing printing / decoration:
  *
- *     marked-up amount → NO rounding
+ *     marked-up amount → rounded ONCE to cents
+ *
+ * Rounding policy: every customer-facing unit price is a 2-decimal amount,
+ * rounded exactly once, here. Everything downstream (line totals, cart,
+ * order) multiplies that rounded unit price by the quantity and never
+ * rounds a unit price again. See round_money().
  *
  * This class intentionally does not:
  *
@@ -53,37 +58,19 @@ final class SellingPriceCalculator {
 	 *
 	 *     result = €5.00
 	 *
-	 * No rounding is performed here.
-	 *
-	 * The final WooCommerce price may subsequently be formatted according
-	 * to WooCommerce's configured decimal settings, but the commercial
-	 * calculation itself remains unrounded.
+	 * The result is the customer-facing unit price, rounded once to cents.
 	 */
 	public function article(
 		float $cost,
 		float $markup_percent
 	): float {
 
-		$cost =
-			$this->normalize_amount(
-				$cost
-			);
-
-
-		$markup_percent =
-			$this->normalize_markup(
+		return $this->round_money(
+			$this->apply_markup(
+				$cost,
 				$markup_percent
-			);
-
-
-		return $cost
-			* (
-				1
-				+ (
-					$markup_percent
-					/ 100
-				)
-			);
+			)
+		);
 	}
 
 
@@ -96,7 +83,7 @@ final class SellingPriceCalculator {
 	/**
 	 * Calculate a finishing / decoration selling price.
 	 *
-	 * No rounding is performed.
+	 * Rounded once to cents.
 	 *
 	 * Example:
 	 *
@@ -110,26 +97,12 @@ final class SellingPriceCalculator {
 		float $markup_percent
 	): float {
 
-		$cost =
-			$this->normalize_amount(
-				$cost
-			);
-
-
-		$markup_percent =
-			$this->normalize_markup(
+		return $this->round_money(
+			$this->apply_markup(
+				$cost,
 				$markup_percent
-			);
-
-
-		return $cost
-			* (
-				1
-				+ (
-					$markup_percent
-					/ 100
-				)
-			);
+			)
+		);
 	}
 
 
@@ -155,8 +128,9 @@ final class SellingPriceCalculator {
 		float $markup_percent
 	): float {
 
+		// Unrounded on purpose: setup rounding works on the raw marked-up amount.
 		$marked_up =
-			$this->finishing(
+			$this->apply_markup(
 				$cost,
 				$markup_percent
 			);
@@ -177,15 +151,14 @@ final class SellingPriceCalculator {
 	/**
 	 * Calculate an ongoing print / decoration amount.
 	 *
-	 * Ongoing printing follows the finishing markup rule but is NOT rounded.
+	 * Ongoing printing follows the finishing markup rule and is rounded once
+	 * to cents (never to whole euros — that is for setup only).
 	 *
 	 * Example:
 	 *
 	 *     €0.83 × 1.25 = €1.0375
 	 *
-	 *     result = €1.0375
-	 *
-	 * The amount is intentionally left at calculation precision.
+	 *     result = €1.04
 	 */
 	public function ongoing(
 		float $cost,
@@ -200,7 +173,7 @@ final class SellingPriceCalculator {
 
 
 	/**
-	 * Calculate a marked-up amount without rounding.
+	 * Calculate a marked-up amount, rounded once to cents.
 	 *
 	 * This is useful for any decoration/printing amount which is subject to
 	 * finishing markup but is not a setup fee.
@@ -214,6 +187,64 @@ final class SellingPriceCalculator {
 			$cost,
 			$markup_percent
 		);
+	}
+
+
+	/*
+	|--------------------------------------------------------------------------
+	| Money Rounding
+	|--------------------------------------------------------------------------
+	*/
+
+	/**
+	 * Round a monetary amount to cents (half up).
+	 *
+	 * The single rounding rule for the whole store. Use it for unit prices
+	 * (once, when they are produced), line totals (unit × quantity), tax and
+	 * sums of already-rounded lines. A tiny epsilon absorbs binary floating
+	 * point noise (e.g. 1.005 stored as 1.00499999…) so half-cent values
+	 * round up as a customer would expect.
+	 */
+	public static function round_money(
+		float $amount
+	): float {
+
+		return round(
+			$amount + ( $amount >= 0 ? 1.0E-9 : -1.0E-9 ),
+			2,
+			PHP_ROUND_HALF_UP
+		);
+	}
+
+
+	/**
+	 * Cost × (1 + markup / 100), unrounded. Internal building block.
+	 */
+	private function apply_markup(
+		float $cost,
+		float $markup_percent
+	): float {
+
+		$cost =
+			$this->normalize_amount(
+				$cost
+			);
+
+
+		$markup_percent =
+			$this->normalize_markup(
+				$markup_percent
+			);
+
+
+		return $cost
+			* (
+				1
+				+ (
+					$markup_percent
+					/ 100
+				)
+			);
 	}
 
 
