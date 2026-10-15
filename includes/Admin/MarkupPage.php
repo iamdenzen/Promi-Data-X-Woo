@@ -115,6 +115,36 @@ final class MarkupPage {
 
 
 	/**
+	 * Human label for a print option: "Name — SKU".
+	 *
+	 * Many print options share the same name, so the SKU is what tells them
+	 * apart. Falls back to whichever of the two exists.
+	 */
+	private function print_option_label(
+		object $option
+	): string {
+
+		$name =
+			trim(
+				(string) ( $option->name ?? '' )
+			);
+
+		$sku =
+			trim(
+				(string) ( $option->sku ?? '' )
+			);
+
+		if ( '' !== $name && '' !== $sku ) {
+			return $name . ' — ' . $sku;
+		}
+
+		return '' !== $name
+			? $name
+			: $sku;
+	}
+
+
+	/**
 	 * Return all WooCommerce product brand terms.
 	 *
 	 * Relies on the product_brand taxonomy already being registered by
@@ -558,52 +588,90 @@ final class MarkupPage {
 
 			<div class="pdxw-add-rule">
 
-				<select id="pdxw-new-print-option">
+				<div
+					class="pdxw-po-picker"
+					style="width: 100%; max-width: 680px; margin-bottom: 10px;"
+				>
 
-					<option value="">
-						<?php echo esc_html__( 'Select a print option…', 'promi-data-x-woo' ); ?>
-					</option>
+					<input
+						type="search"
+						id="pdxw-po-search"
+						class="regular-text"
+						style="width: 100%;"
+						autocomplete="off"
+						placeholder="<?php echo esc_attr__( 'Search name or SKU…', 'promi-data-x-woo' ); ?>"
+					>
 
-					<?php foreach ( $print_options as $option ) : ?>
+					<div style="margin: 6px 0;">
 
-						<?php
-						$option_id =
-							absint(
-								$option->id
-							);
-
-						$option_name =
-							trim(
-								(string) (
-									$option->name
-									?: $option->sku
-								)
-							);
-						?>
-
-						<option
-							value="<?php echo esc_attr( $option_id ); ?>"
-							<?php disabled( in_array( $option_id, $print_option_rule_ids, true ) ); ?>
+						<button
+							type="button"
+							id="pdxw-po-select-matching"
+							class="button button-small"
 						>
+							<?php echo esc_html__( 'Select all matching', 'promi-data-x-woo' ); ?>
+						</button>
+
+						<button
+							type="button"
+							id="pdxw-po-clear"
+							class="button button-small"
+						>
+							<?php echo esc_html__( 'Clear selection', 'promi-data-x-woo' ); ?>
+						</button>
+
+						<span
+							id="pdxw-po-counter"
+							class="description"
+							style="margin-left: 8px;"
+						></span>
+
+					</div>
+
+					<div
+						id="pdxw-po-list"
+						style="max-height: 260px; overflow: auto; border: 1px solid #c3c4c7; background: #fff; padding: 4px 8px;"
+					>
+
+						<?php foreach ( $print_options as $option ) : ?>
+
 							<?php
-							echo esc_html(
-								$option_name
-								. (
-									in_array(
-										$option_id,
-										$print_option_rule_ids,
-										true
-									)
-									? ' — ' . __( 'Already configured', 'promi-data-x-woo' )
-									: ''
-								)
-							);
+							$option_id =
+								absint(
+									$option->id
+								);
+
+							$option_label =
+								$this->print_option_label(
+									$option
+								);
 							?>
-						</option>
 
-					<?php endforeach; ?>
+							<label
+								class="pdxw-po-item"
+								data-search="<?php echo esc_attr( function_exists( 'mb_strtolower' ) ? mb_strtolower( $option_label ) : strtolower( $option_label ) ); ?>"
+								style="display: block; padding: 2px 0;"
+							>
+								<input
+									type="checkbox"
+									value="<?php echo esc_attr( $option_id ); ?>"
+								>
 
-				</select>
+								<span class="pdxw-po-label"><?php echo esc_html( $option_label ); ?></span>
+
+								<em
+									class="pdxw-po-badge"
+									style="color: #2271b1; margin-left: 6px;<?php echo in_array( $option_id, $print_option_rule_ids, true ) ? '' : ' display: none;'; ?>"
+								>
+									<?php echo esc_html__( 'overridden', 'promi-data-x-woo' ); ?>
+								</em>
+							</label>
+
+						<?php endforeach; ?>
+
+					</div>
+
+				</div>
 
 				<input
 					type="number"
@@ -630,7 +698,7 @@ final class MarkupPage {
 					id="pdxw-add-print-option-rule"
 					class="button"
 				>
-					<?php echo esc_html__( 'Add Print Option Override', 'promi-data-x-woo' ); ?>
+					<?php echo esc_html__( 'Apply to selected', 'promi-data-x-woo' ); ?>
 				</button>
 
 			</div>
@@ -695,11 +763,8 @@ final class MarkupPage {
 									=== $option_id
 								) {
 									$option_name =
-										trim(
-											(string) (
-												$option->name
-												?: $option->sku
-											)
+										$this->print_option_label(
+											$option
 										);
 
 									break;
@@ -1493,20 +1558,16 @@ final class MarkupPage {
 
 			/*
 			|--------------------------------------------------------------------------
-			| Add Print Option Rule
+			| Apply Print Option Rules (bulk)
 			|--------------------------------------------------------------------------
 			|
 			| Print options have two independent markup values (price and
 			| fee), so they can't reuse the single-value addRule() helper
-			| used for categories.
+			| used for categories. One price/fee pair is applied to every
+			| option selected in the picker below, in a single request.
 			*/
 
-			function addPrintOptionRule() {
-
-				const select =
-					document.getElementById(
-						'pdxw-new-print-option'
-					);
+			function applyPrintOptionRules() {
 
 				const priceInput =
 					document.getElementById(
@@ -1518,26 +1579,26 @@ final class MarkupPage {
 						'pdxw-new-print-option-fee-markup'
 					);
 
-				const id =
-					parseInt(
-						select.value,
-						10
-					);
+				const ids =
+					Array.from( selectedPrintOptions );
 
 				const priceMarkup =
 					validateMarkup(
 						priceInput.value
 					);
 
+				// A blank fee markup reuses the price markup.
 				const feeMarkup =
-					validateMarkup(
-						feeInput.value
-					);
+					feeInput.value.trim() === ''
+						? priceMarkup
+						: validateMarkup(
+							feeInput.value
+						);
 
-				if ( ! id ) {
+				if ( ! ids.length ) {
 
 					showNotice(
-						<?php echo wp_json_encode( __( 'Please select an item.', 'promi-data-x-woo' ) ); ?>,
+						<?php echo wp_json_encode( __( 'Please select at least one print option.', 'promi-data-x-woo' ) ); ?>,
 						'error'
 					);
 
@@ -1557,10 +1618,29 @@ final class MarkupPage {
 					return;
 				}
 
+				if (
+					! window.confirm(
+						<?php echo wp_json_encode( __( 'Apply the markup to', 'promi-data-x-woo' ) ); ?>
+						+ ' ' + ids.length + ' '
+						+ <?php echo wp_json_encode( __( 'print option(s)? Price', 'promi-data-x-woo' ) ); ?>
+						+ ' ' + priceMarkup + '% / '
+						+ <?php echo wp_json_encode( __( 'Fee', 'promi-data-x-woo' ) ); ?>
+						+ ' ' + feeMarkup + '%. '
+						+ <?php echo wp_json_encode( __( 'Existing overrides of these options are replaced.', 'promi-data-x-woo' ) ); ?>
+					)
+				) {
+					return;
+				}
+
+				applyButton.disabled = true;
+
 				apiFetch(
-					'/pricing/print-options/' + id,
+					'/pricing/print-options/bulk',
 					'POST',
 					{
+						ids:
+							ids,
+
 						price_markup_percent:
 							priceMarkup,
 
@@ -1569,19 +1649,7 @@ final class MarkupPage {
 					}
 				)
 				.then(
-					function () {
-
-						const option =
-							select.options[
-								select.selectedIndex
-							];
-
-						const name =
-							option.text
-								.replace(
-									' — <?php echo esc_js( __( 'Already configured', 'promi-data-x-woo' ) ); ?>',
-									''
-								);
+					function ( data ) {
 
 						const tbody =
 							document
@@ -1598,56 +1666,113 @@ final class MarkupPage {
 							emptyRow.remove();
 						}
 
-						const row =
-							document.createElement(
-								'tr'
+						// Existing rows by option id, so re-applying updates them
+						// in place instead of adding duplicates.
+						const existing = {};
+
+						tbody
+							.querySelectorAll( 'tr[data-rule-id]' )
+							.forEach(
+								function ( row ) {
+									existing[ row.dataset.ruleId ] = row;
+								}
 							);
 
-						row.dataset.ruleId =
-							id;
+						const fragment =
+							document.createDocumentFragment();
 
-						row.innerHTML =
-							'<td class="pdxw-rule-name">'
-							+ escapeHtml( name )
-							+ '</td>'
-							+ '<td>'
-							+ '<input type="number" class="small-text pdxw-rule-price-markup" '
-							+ 'value="' + priceMarkup + '" min="0" step="0.01">'
-							+ '</td>'
-							+ '<td>'
-							+ '<input type="number" class="small-text pdxw-rule-fee-markup" '
-							+ 'value="' + feeMarkup + '" min="0" step="0.01">'
-							+ '</td>'
-							+ '<td>'
-							+ '<button type="button" class="button button-small pdxw-save-print-option-rule">'
-							+ <?php echo wp_json_encode( __( 'Save', 'promi-data-x-woo' ) ); ?>
-							+ '</button> '
-							+ '<button type="button" class="button button-small pdxw-delete-print-option-rule">'
-							+ <?php echo wp_json_encode( __( 'Remove', 'promi-data-x-woo' ) ); ?>
-							+ '</button>'
-							+ '</td>';
+						ids.forEach(
+							function ( id ) {
 
-						tbody.appendChild(
-							row
+								const key =
+									String( id );
+
+								let row =
+									existing[ key ];
+
+								if ( row ) {
+
+									row.querySelector( '.pdxw-rule-price-markup' ).value =
+										priceMarkup;
+
+									row.querySelector( '.pdxw-rule-fee-markup' ).value =
+										feeMarkup;
+
+								} else {
+
+									const item =
+										printOptionItems[ key ];
+
+									const name =
+										item
+											? item.querySelector( '.pdxw-po-label' ).textContent
+											: 'Print Option #' + key;
+
+									row =
+										document.createElement(
+											'tr'
+										);
+
+									row.dataset.ruleId =
+										key;
+
+									row.innerHTML =
+										'<td class="pdxw-rule-name">'
+										+ escapeHtml( name )
+										+ '</td>'
+										+ '<td>'
+										+ '<input type="number" class="small-text pdxw-rule-price-markup" '
+										+ 'value="' + priceMarkup + '" min="0" step="0.01">'
+										+ '</td>'
+										+ '<td>'
+										+ '<input type="number" class="small-text pdxw-rule-fee-markup" '
+										+ 'value="' + feeMarkup + '" min="0" step="0.01">'
+										+ '</td>'
+										+ '<td>'
+										+ '<button type="button" class="button button-small pdxw-save-print-option-rule">'
+										+ <?php echo wp_json_encode( __( 'Save', 'promi-data-x-woo' ) ); ?>
+										+ '</button> '
+										+ '<button type="button" class="button button-small pdxw-delete-print-option-rule">'
+										+ <?php echo wp_json_encode( __( 'Remove', 'promi-data-x-woo' ) ); ?>
+										+ '</button>'
+										+ '</td>';
+
+									fragment.appendChild(
+										row
+									);
+								}
+
+								markPrintOptionOverridden(
+									key,
+									true
+								);
+							}
 						);
 
-						select
-							.querySelector(
-								'option[value="'
-								+ id
-								+ '"]'
-							)
-							.disabled =
-								true;
+						tbody.appendChild(
+							fragment
+						);
 
-						select.value = '';
+						selectedPrintOptions.clear();
+
+						printOptionList
+							.querySelectorAll( 'input[type="checkbox"]' )
+							.forEach(
+								function ( box ) {
+									box.checked = false;
+								}
+							);
+
+						updatePrintOptionCounter();
 
 						priceInput.value = '';
 
 						feeInput.value = '';
 
 						showNotice(
-							<?php echo wp_json_encode( __( 'Markup override added.', 'promi-data-x-woo' ) ); ?>,
+							( data.updated || ids.length )
+							+ ' '
+							+ <?php echo wp_json_encode( __( 'print option markup override(s) saved.', 'promi-data-x-woo' ) ); ?>,
 							'success'
 						);
 					}
@@ -1657,22 +1782,233 @@ final class MarkupPage {
 
 						showNotice(
 							error.message
-							|| <?php echo wp_json_encode( __( 'Error adding markup override.', 'promi-data-x-woo' ) ); ?>,
+							|| <?php echo wp_json_encode( __( 'Error saving markup overrides.', 'promi-data-x-woo' ) ); ?>,
 							'error'
 						);
+					}
+				)
+				.finally(
+					function () {
+						applyButton.disabled = false;
 					}
 				);
 			}
 
 
+			/*
+			|--------------------------------------------------------------------------
+			| Print option picker: search + multi-select
+			|--------------------------------------------------------------------------
+			|
+			| A plain checkbox list (4,600+ entries) filtered client-side. The
+			| selection lives in a Set of ids, so it survives changing the search.
+			*/
+
+			const printOptionList =
+				document.getElementById(
+					'pdxw-po-list'
+				);
+
+			const printOptionSearch =
+				document.getElementById(
+					'pdxw-po-search'
+				);
+
+			const printOptionCounter =
+				document.getElementById(
+					'pdxw-po-counter'
+				);
+
+			const applyButton =
+				document.getElementById(
+					'pdxw-add-print-option-rule'
+				);
+
+			const selectedPrintOptions =
+				new Set();
+
+			const printOptionItems = {};
+
+			printOptionList
+				.querySelectorAll( '.pdxw-po-item' )
+				.forEach(
+					function ( item ) {
+
+						printOptionItems[
+							item.querySelector( 'input' ).value
+						] = item;
+					}
+				);
+
+			function updatePrintOptionCounter() {
+
+				let shown = 0;
+
+				Object.keys( printOptionItems ).forEach(
+					function ( key ) {
+
+						if ( printOptionItems[ key ].style.display !== 'none' ) {
+							shown++;
+						}
+					}
+				);
+
+				printOptionCounter.textContent =
+					selectedPrintOptions.size
+					+ ' '
+					+ <?php echo wp_json_encode( __( 'selected', 'promi-data-x-woo' ) ); ?>
+					+ ' / '
+					+ shown
+					+ ' '
+					+ <?php echo wp_json_encode( __( 'shown', 'promi-data-x-woo' ) ); ?>;
+			}
+
+			function markPrintOptionOverridden(
+				id,
+				overridden
+			) {
+
+				const item =
+					printOptionItems[ String( id ) ];
+
+				if ( ! item ) {
+					return;
+				}
+
+				item.querySelector( '.pdxw-po-badge' ).style.display =
+					overridden
+						? ''
+						: 'none';
+			}
+
+			function filterPrintOptions() {
+
+				const words =
+					printOptionSearch.value
+						.toLowerCase()
+						.split( /\s+/ )
+						.filter( Boolean );
+
+				Object.keys( printOptionItems ).forEach(
+					function ( key ) {
+
+						const item =
+							printOptionItems[ key ];
+
+						const haystack =
+							item.dataset.search;
+
+						const match =
+							words.every(
+								function ( word ) {
+									return haystack.indexOf( word ) !== -1;
+								}
+							);
+
+						item.style.display =
+							match
+								? 'block'
+								: 'none';
+					}
+				);
+
+				updatePrintOptionCounter();
+			}
+
+			let printOptionFilterTimer = null;
+
+			printOptionSearch.addEventListener(
+				'input',
+				function () {
+
+					window.clearTimeout( printOptionFilterTimer );
+
+					printOptionFilterTimer =
+						window.setTimeout(
+							filterPrintOptions,
+							100
+						);
+				}
+			);
+
+			printOptionList.addEventListener(
+				'change',
+				function ( event ) {
+
+					const box =
+						event.target;
+
+					if ( box.type !== 'checkbox' ) {
+						return;
+					}
+
+					if ( box.checked ) {
+						selectedPrintOptions.add( box.value );
+					} else {
+						selectedPrintOptions.delete( box.value );
+					}
+
+					updatePrintOptionCounter();
+				}
+			);
+
 			document
 				.getElementById(
-					'pdxw-add-print-option-rule'
+					'pdxw-po-select-matching'
 				)
 				.addEventListener(
 					'click',
-					addPrintOptionRule
+					function () {
+
+						Object.keys( printOptionItems ).forEach(
+							function ( key ) {
+
+								const item =
+									printOptionItems[ key ];
+
+								if ( item.style.display === 'none' ) {
+									return;
+								}
+
+								item.querySelector( 'input' ).checked =
+									true;
+
+								selectedPrintOptions.add( key );
+							}
+						);
+
+						updatePrintOptionCounter();
+					}
 				);
+
+			document
+				.getElementById(
+					'pdxw-po-clear'
+				)
+				.addEventListener(
+					'click',
+					function () {
+
+						selectedPrintOptions.clear();
+
+						printOptionList
+							.querySelectorAll( 'input[type="checkbox"]' )
+							.forEach(
+								function ( box ) {
+									box.checked = false;
+								}
+							);
+
+						updatePrintOptionCounter();
+					}
+				);
+
+			updatePrintOptionCounter();
+
+			applyButton.addEventListener(
+				'click',
+				applyPrintOptionRules
+			);
 
 
 			/*
@@ -2260,21 +2596,10 @@ final class MarkupPage {
 
 								row.remove();
 
-								const select =
-									document.getElementById(
-										'pdxw-new-print-option'
-									);
-
-								const option =
-									select.querySelector(
-										'option[value="'
-										+ id
-										+ '"]'
-									);
-
-								if ( option ) {
-									option.disabled = false;
-								}
+								markPrintOptionOverridden(
+									id,
+									false
+								);
 
 								if (
 									! tbody.querySelector(
@@ -2772,24 +3097,29 @@ final class MarkupPage {
 							row.remove();
 
 
-							const select =
-								type === categoryType
-									? document.getElementById(
-										'pdxw-new-category'
-									)
-									: document.getElementById(
-										'pdxw-new-print-option'
-									);
+							if ( type === categoryType ) {
 
-							const option =
-								select.querySelector(
-									'option[value="'
-									+ id
-									+ '"]'
+								const option =
+									document
+										.getElementById(
+											'pdxw-new-category'
+										)
+										.querySelector(
+											'option[value="'
+											+ id
+											+ '"]'
+										);
+
+								if ( option ) {
+									option.disabled = false;
+								}
+
+							} else {
+
+								markPrintOptionOverridden(
+									id,
+									false
 								);
-
-							if ( option ) {
-								option.disabled = false;
 							}
 
 

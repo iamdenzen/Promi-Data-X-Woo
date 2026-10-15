@@ -378,6 +378,34 @@ final class RestController {
 
 		/*
 		|--------------------------------------------------------------------------
+		| Print option markups: bulk apply
+		|--------------------------------------------------------------------------
+		*/
+
+		register_rest_route(
+			'pdxw/v1',
+			'/pricing/print-options/bulk',
+			[
+				'methods' =>
+					\WP_REST_Server::CREATABLE,
+
+				'permission_callback' =>
+					[
+						$this,
+						'permission',
+					],
+
+				'callback' =>
+					[
+						$this,
+						'save_print_options_bulk',
+					],
+			]
+		);
+
+
+		/*
+		|--------------------------------------------------------------------------
 		| Catalog price recalculation
 		|--------------------------------------------------------------------------
 		*/
@@ -952,6 +980,128 @@ final class RestController {
 						: $this->pricing
 							->markup_rules()
 							->print_fee_default(),
+			]
+		);
+	}
+
+
+	/**
+	 * Apply one price / fee markup to many print options at once.
+	 *
+	 * Body:
+	 *
+	 *     ids                   int[]  print option IDs
+	 *     price_markup_percent  float  required
+	 *     fee_markup_percent    float  optional, defaults to the price markup
+	 *
+	 * Existing overrides of the given options are overwritten.
+	 */
+	public function save_print_options_bulk(
+		\WP_REST_Request $request
+	) {
+
+		$data =
+			$request->get_json_params();
+
+		if ( ! is_array( $data ) ) {
+			$data = [];
+		}
+
+		$ids =
+			isset( $data['ids'] )
+			&& is_array( $data['ids'] )
+				? array_values(
+					array_unique(
+						array_filter(
+							array_map(
+								'absint',
+								$data['ids']
+							)
+						)
+					)
+				)
+				: [];
+
+		if ( empty( $ids ) ) {
+			return new \WP_Error(
+				'pdxw_no_print_options',
+				'ids must contain at least one print option.',
+				[
+					'status' => 400,
+				]
+			);
+		}
+
+		if ( count( $ids ) > 10000 ) {
+			return new \WP_Error(
+				'pdxw_too_many_print_options',
+				'A maximum of 10000 print options can be updated at once.',
+				[
+					'status' => 400,
+				]
+			);
+		}
+
+		$price_markup =
+			$this->markup(
+				$request,
+				'price_markup_percent'
+			);
+
+		if ( is_wp_error( $price_markup ) ) {
+			return $price_markup;
+		}
+
+		$fee_markup =
+			array_key_exists(
+				'fee_markup_percent',
+				$data
+			)
+			&& '' !== $data['fee_markup_percent']
+			&& null !== $data['fee_markup_percent']
+				? $this->markup(
+					$request,
+					'fee_markup_percent'
+				)
+				: $price_markup;
+
+		if ( is_wp_error( $fee_markup ) ) {
+			return $fee_markup;
+		}
+
+		$repository =
+			$this->pricing
+				->markup_repository();
+
+		$price_saved =
+			$repository->save_many(
+				MarkupRepository::TYPE_PRINT_OPTION_PRICE,
+				$ids,
+				(float) $price_markup
+			);
+
+		$fee_saved =
+			$repository->save_many(
+				MarkupRepository::TYPE_PRINT_OPTION_FEE,
+				$ids,
+				(float) $fee_markup
+			);
+
+		if ( ! $price_saved || ! $fee_saved ) {
+			return new \WP_Error(
+				'pdxw_print_option_markup_save_failed',
+				'Could not save print option markups.',
+				[
+					'status' => 500,
+				]
+			);
+		}
+
+		return new \WP_REST_Response(
+			[
+				'updated'              => count( $ids ),
+				'price_markup_percent' => (float) $price_markup,
+				'fee_markup_percent'   => (float) $fee_markup,
 			]
 		);
 	}

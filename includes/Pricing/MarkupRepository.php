@@ -168,6 +168,121 @@ final class MarkupRepository {
 
 
 	/**
+	 * Save the same markup for many targets at once.
+	 *
+	 * Equivalent to calling save() for every ID, but written as chunked
+	 * multi-row INSERT ... ON DUPLICATE KEY UPDATE statements so that
+	 * thousands of rules cost a handful of queries.
+	 *
+	 * @param int[] $target_ids
+	 */
+	public function save_many(
+		string $type,
+		array $target_ids,
+		float $markup_percent
+	): bool {
+
+		$type =
+			$this->normalize_type(
+				$type
+			);
+
+		$target_ids =
+			array_values(
+				array_unique(
+					array_filter(
+						array_map(
+							'absint',
+							$target_ids
+						)
+					)
+				)
+			);
+
+		if (
+			'' === $type
+			|| empty( $target_ids )
+		) {
+			return false;
+		}
+
+		$markup_percent =
+			max(
+				0.0,
+				$markup_percent
+			);
+
+		global $wpdb;
+
+		$table =
+			Database::table(
+				'pricing_markup_rules'
+			);
+
+		$now =
+			current_time(
+				'mysql',
+				true
+			);
+
+		foreach (
+			array_chunk(
+				$target_ids,
+				500
+			) as $chunk
+		) {
+
+			$placeholders = [];
+			$values       = [];
+
+			foreach ( $chunk as $target_id ) {
+
+				$placeholders[] =
+					'(%s, %d, %f, 1, %s, %s)';
+
+				array_push(
+					$values,
+					$type,
+					$target_id,
+					$markup_percent,
+					$now,
+					$now
+				);
+			}
+
+			$result =
+				$wpdb->query(
+					$wpdb->prepare(
+						"INSERT INTO {$table}
+						(
+							rule_type,
+							target_id,
+							markup_percent,
+							enabled,
+							created_at,
+							updated_at
+						)
+						VALUES "
+						. implode( ', ', $placeholders )
+						. "
+						ON DUPLICATE KEY UPDATE
+							markup_percent = VALUES(markup_percent),
+							enabled = 1,
+							updated_at = VALUES(updated_at)",
+						$values
+					)
+				);
+
+			if ( false === $result ) {
+				return false;
+			}
+		}
+
+		return true;
+	}
+
+
+	/**
 	 * Delete one rule.
 	 */
 	public function delete(
