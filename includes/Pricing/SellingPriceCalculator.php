@@ -20,7 +20,7 @@ defined( 'ABSPATH' ) || exit;
  * Setup:
  *
  *     marked-up amount (unrounded) → whole euro (ceil)
- *                                  → price ending in 9 (e.g. 57.902 → 58 → 59,
+ *                                  → next price ending in 9 (e.g. 39.0625 → 40 → 49,
  *                                    see round_setup())
  *
  * Ongoing printing / decoration:
@@ -119,13 +119,12 @@ final class SellingPriceCalculator {
 	 *         ↓
 	 *     round up to a whole euro
 	 *         ↓
-	 *     map to the price ending in 9 (see round_setup())
+	 *     round up to the next price ending in 9 (see round_setup())
 	 *
-	 * Example:
+	 * Examples:
 	 *
-	 *     €44.54 × 1.30 = €57.902
-	 *
-	 *     €57.902 → €58 → result = €59
+	 *     €44.54 × 1.30 = €57.902  →  €58  →  result = €59
+	 *     €31.25 × 1.25 = €39.0625 →  €40  →  result = €49
 	 */
 	public function setup(
 		float $cost,
@@ -260,25 +259,26 @@ final class SellingPriceCalculator {
 	*/
 
 	/**
-	 * Round a setup amount to a price ending in 9.
+	 * Round a setup amount UP to the next price ending in 9.
 	 *
-	 * The amount is first rounded up to a whole euro (ceil). That whole euro
-	 * n is then mapped to the 9-ending price of its decade:
+	 * The amount is first rounded up to a whole euro n (ceil). The result is
+	 * the smallest whole euro ending in 9 that is >= n:
 	 *
-	 *     n = 10k + 1 ... 10k + 10   →   10k + 9
+	 *     result = floor( n / 10 ) * 10 + 9
+	 *
+	 * It never goes below the marked-up amount.
 	 *
 	 * Examples:
 	 *
-	 *     55.23 → 56 → 59
-	 *     57.902 → 58 → 59
-	 *     59.00 → 59
-	 *     60.00 → 60 → 59   (a whole euro ending in 0 goes DOWN by 1)
-	 *     59.10 → 60 → 59
-	 *     60.50 → 61 → 69
+	 *     39.0625 → 40 → 49
+	 *     55.23   → 56 → 59
+	 *     57.902  → 58 → 59
+	 *     39.00   → 39
+	 *     59.10   → 60 → 69
+	 *     60.00   → 60 → 69
 	 *
-	 * This is the intended business rule (price endings of 9), not ordinary
-	 * rounding to the nearest euro. Note the one case where the result is
-	 * below the marked-up amount: amounts that round up to a multiple of 10.
+	 * This is the business rule (price endings of 9), not ordinary rounding
+	 * to the nearest euro.
 	 */
 	public function round_setup(
 		float $amount
@@ -293,33 +293,26 @@ final class SellingPriceCalculator {
 			return 0.0;
 		}
 
+		// The small epsilon keeps float noise (39.00000000000001) from
+		// pushing an exact whole euro up to the next 9.
 		$rounded =
 			(float) ceil(
-				$amount
+				$amount - 1.0E-9
 			);
 
 		if ( $rounded <= 0 ) {
 			return 0.0;
 		}
 
-		$last_digit =
-			(int) fmod(
-				$rounded,
-				10
-			);
-
-		if ( 9 === $last_digit ) {
-			return $rounded;
-		}
-
+		// Smallest whole euro ending in 9 that is >= $rounded.
 		return (float) (
 			(
 				(int) floor(
-					( $rounded + 9 ) / 10
+					$rounded / 10
 				)
 				* 10
 			)
-			- 1
+			+ 9
 		);
 	}
 
