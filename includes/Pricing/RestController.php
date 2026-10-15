@@ -378,6 +378,34 @@ final class RestController {
 
 		/*
 		|--------------------------------------------------------------------------
+		| Category markups: bulk apply
+		|--------------------------------------------------------------------------
+		*/
+
+		register_rest_route(
+			'pdxw/v1',
+			'/pricing/categories/bulk',
+			[
+				'methods' =>
+					\WP_REST_Server::CREATABLE,
+
+				'permission_callback' =>
+					[
+						$this,
+						'permission',
+					],
+
+				'callback' =>
+					[
+						$this,
+						'save_categories_bulk',
+					],
+			]
+		);
+
+
+		/*
+		|--------------------------------------------------------------------------
 		| Print option markups: bulk apply
 		|--------------------------------------------------------------------------
 		*/
@@ -766,6 +794,134 @@ final class RestController {
 
 				'markup_percent' =>
 					$markup,
+			]
+		);
+	}
+
+
+	/**
+	 * Apply one markup to many categories at once.
+	 *
+	 * Body:
+	 *
+	 *     ids             int[]  product_cat term IDs
+	 *     markup_percent  float
+	 *
+	 * Existing overrides of the given categories are overwritten. Catalog
+	 * prices of the affected products are refreshed once afterwards.
+	 */
+	public function save_categories_bulk(
+		\WP_REST_Request $request
+	) {
+
+		$data =
+			$request->get_json_params();
+
+		if ( ! is_array( $data ) ) {
+			$data = [];
+		}
+
+		$ids =
+			isset( $data['ids'] )
+			&& is_array( $data['ids'] )
+				? array_values(
+					array_unique(
+						array_filter(
+							array_map(
+								'absint',
+								$data['ids']
+							)
+						)
+					)
+				)
+				: [];
+
+		if ( empty( $ids ) ) {
+			return new \WP_Error(
+				'pdxw_no_categories',
+				'ids must contain at least one category.',
+				[
+					'status' => 400,
+				]
+			);
+		}
+
+		if ( count( $ids ) > 10000 ) {
+			return new \WP_Error(
+				'pdxw_too_many_categories',
+				'A maximum of 10000 categories can be updated at once.',
+				[
+					'status' => 400,
+				]
+			);
+		}
+
+		$markup =
+			$this->markup(
+				$request
+			);
+
+		if ( is_wp_error( $markup ) ) {
+			return $markup;
+		}
+
+		// Only real product categories get a rule.
+		$ids =
+			array_values(
+				array_filter(
+					$ids,
+					static function ( int $id ): bool {
+
+						$term =
+							get_term(
+								$id,
+								'product_cat'
+							);
+
+						return $term
+							&& ! is_wp_error( $term );
+					}
+				)
+			);
+
+		if ( empty( $ids ) ) {
+			return new \WP_Error(
+				'pdxw_category_not_found',
+				'None of the given categories exist.',
+				[
+					'status' => 404,
+				]
+			);
+		}
+
+		if (
+			! $this->pricing
+				->markup_repository()
+				->save_many(
+					MarkupRepository::TYPE_CATEGORY,
+					$ids,
+					(float) $markup
+				)
+		) {
+			return new \WP_Error(
+				'pdxw_category_markup_save_failed',
+				'Could not save category markups.',
+				[
+					'status' => 500,
+				]
+			);
+		}
+
+		$this->pricing
+			->price_sync()
+			->reprice_categories(
+				$ids
+			);
+
+		return new \WP_REST_Response(
+			[
+				'updated'        => count( $ids ),
+				'markup_percent' => (float) $markup,
 			]
 		);
 	}

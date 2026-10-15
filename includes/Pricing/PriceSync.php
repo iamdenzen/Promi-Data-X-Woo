@@ -216,38 +216,71 @@ final class PriceSync {
 		int $term_id
 	): int {
 
-		$term_id =
-			absint(
-				$term_id
-			);
-
-		if ( ! $term_id ) {
-			return 0;
-		}
-
-		$term_ids =
+		return $this->reprice_categories(
 			[
 				$term_id,
-			];
+			]
+		);
+	}
 
-		$children =
-			get_term_children(
-				$term_id,
-				'product_cat'
+
+	/**
+	 * Reprice every product in any of the given categories (and their
+	 * descendants), scheduling each product only once.
+	 *
+	 * @param int[] $term_ids
+	 */
+	public function reprice_categories(
+		array $term_ids
+	): int {
+
+		$all_terms = [];
+
+		foreach (
+			array_filter(
+				array_map(
+					'absint',
+					$term_ids
+				)
+			) as $term_id
+		) {
+
+			$all_terms[] =
+				$term_id;
+
+			$children =
+				get_term_children(
+					$term_id,
+					'product_cat'
+				);
+
+			if ( is_array( $children ) ) {
+
+				$all_terms =
+					array_merge(
+						$all_terms,
+						$children
+					);
+			}
+		}
+
+		$all_terms =
+			array_values(
+				array_unique(
+					array_map(
+						'absint',
+						$all_terms
+					)
+				)
 			);
 
-		if ( is_array( $children ) ) {
-
-			$term_ids =
-				array_merge(
-					$term_ids,
-					$children
-				);
+		if ( empty( $all_terms ) ) {
+			return 0;
 		}
 
 		$ids =
 			get_objects_in_term(
-				$term_ids,
+				$all_terms,
 				'product_cat'
 			);
 

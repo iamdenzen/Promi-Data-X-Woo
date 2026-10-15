@@ -65,11 +65,17 @@ final class MarkupPage {
 
 
 	/**
-	 * Return all WooCommerce product categories.
+	 * Return all WooCommerce product categories as a depth-first tree.
+	 *
+	 * Many categories share a name (e.g. "Sonstiges" under several parents),
+	 * so every entry also carries its full path ("A › B › C") and the path of
+	 * its parent, used to tell them apart.
+	 *
+	 * @return array<int,array{id:int,name:string,depth:int,path:string,context:string}>
 	 */
-	private function categories(): array {
+	private function category_tree(): array {
 
-		$categories =
+		$terms =
 			get_terms(
 				[
 					'taxonomy'   => 'product_cat',
@@ -77,9 +83,213 @@ final class MarkupPage {
 				]
 			);
 
-		return is_wp_error( $categories )
-			? []
-			: $categories;
+		if (
+			is_wp_error( $terms )
+			|| empty( $terms )
+		) {
+			return [];
+		}
+
+		$known = [];
+
+		foreach ( $terms as $term ) {
+			$known[ (int) $term->term_id ] = true;
+		}
+
+		$by_parent = [];
+
+		foreach ( $terms as $term ) {
+
+			$parent =
+				(int) $term->parent;
+
+			// A term whose parent no longer exists is shown at the top level.
+			if ( $parent && ! isset( $known[ $parent ] ) ) {
+				$parent = 0;
+			}
+
+			$by_parent[ $parent ][] = $term;
+		}
+
+		foreach ( $by_parent as &$children ) {
+
+			usort(
+				$children,
+				static fn ( $a, $b ): int => strcasecmp( $a->name, $b->name )
+			);
+		}
+
+		unset( $children );
+
+		$result = [];
+
+		$walk = function (
+			int $parent,
+			int $depth,
+			array $trail
+		) use ( &$walk, &$result, $by_parent ): void {
+
+			foreach ( $by_parent[ $parent ] ?? [] as $term ) {
+
+				$path =
+					array_merge(
+						$trail,
+						[
+							wp_specialchars_decode( $term->name ),
+						]
+					);
+
+				$result[] = [
+					'id'      => (int) $term->term_id,
+					'name'    => wp_specialchars_decode( $term->name ),
+					'depth'   => $depth,
+					'path'    => implode( ' › ', $path ),
+					'context' => implode( ' › ', $trail ),
+				];
+
+				$walk(
+					(int) $term->term_id,
+					$depth + 1,
+					$path
+				);
+			}
+		};
+
+		$walk( 0, 0, [] );
+
+		return $result;
+	}
+
+
+	/**
+	 * Render a searchable multi-select list (checkbox rows).
+	 *
+	 * The matching JavaScript factory is createPicker(); element ids are
+	 * derived from $prefix: pdxw-{prefix}-search / -select-matching / -clear /
+	 * -counter / -list.
+	 *
+	 * Each item: id, label, optional path (full name, used for the rules table
+	 * and search), optional context (muted hint), optional depth (indent).
+	 *
+	 * @param array<int,array<string,mixed>> $items
+	 * @param int[]                          $overridden_ids IDs that already have a rule.
+	 */
+	private function render_picker(
+		string $prefix,
+		array $items,
+		array $overridden_ids,
+		string $placeholder
+	): void {
+
+		$base =
+			'pdxw-' . $prefix;
+
+		?>
+		<div
+			class="pdxw-picker"
+			style="width: 100%; max-width: 680px; margin-bottom: 10px;"
+		>
+
+			<input
+				type="search"
+				id="<?php echo esc_attr( $base ); ?>-search"
+				class="regular-text"
+				style="width: 100%;"
+				autocomplete="off"
+				placeholder="<?php echo esc_attr( $placeholder ); ?>"
+			>
+
+			<div style="margin: 6px 0;">
+
+				<button
+					type="button"
+					id="<?php echo esc_attr( $base ); ?>-select-matching"
+					class="button button-small"
+				>
+					<?php echo esc_html__( 'Select all matching', 'promi-data-x-woo' ); ?>
+				</button>
+
+				<button
+					type="button"
+					id="<?php echo esc_attr( $base ); ?>-clear"
+					class="button button-small"
+				>
+					<?php echo esc_html__( 'Clear selection', 'promi-data-x-woo' ); ?>
+				</button>
+
+				<span
+					id="<?php echo esc_attr( $base ); ?>-counter"
+					class="description"
+					style="margin-left: 8px;"
+				></span>
+
+			</div>
+
+			<div
+				id="<?php echo esc_attr( $base ); ?>-list"
+				style="max-height: 260px; overflow: auto; border: 1px solid #c3c4c7; background: #fff; padding: 4px 8px;"
+			>
+
+				<?php foreach ( $items as $item ) : ?>
+
+					<?php
+					$item_id =
+						absint( $item['id'] );
+
+					$item_label =
+						(string) $item['label'];
+
+					$item_path =
+						(string) ( $item['path'] ?? $item_label );
+
+					$item_context =
+						(string) ( $item['context'] ?? '' );
+
+					$item_depth =
+						max( 0, (int) ( $item['depth'] ?? 0 ) );
+
+					$haystack =
+						$item_path . ' ' . $item_label;
+
+					$haystack =
+						function_exists( 'mb_strtolower' )
+							? mb_strtolower( $haystack )
+							: strtolower( $haystack );
+					?>
+
+					<label
+						class="pdxw-pick-item"
+						data-search="<?php echo esc_attr( $haystack ); ?>"
+						data-path="<?php echo esc_attr( $item_path ); ?>"
+						style="display: block; padding: 2px 0 2px <?php echo esc_attr( $item_depth * 18 ); ?>px;"
+					>
+						<input
+							type="checkbox"
+							value="<?php echo esc_attr( $item_id ); ?>"
+						>
+
+						<span class="pdxw-pick-label"><?php echo esc_html( $item_label ); ?></span>
+
+						<?php if ( '' !== $item_context ) : ?>
+							<span class="description">
+								<?php echo esc_html( '— ' . $item_context ); ?>
+							</span>
+						<?php endif; ?>
+
+						<em
+							class="pdxw-pick-badge"
+							style="color: #2271b1; margin-left: 6px;<?php echo in_array( $item_id, $overridden_ids, true ) ? '' : ' display: none;'; ?>"
+						>
+							<?php echo esc_html__( 'overridden', 'promi-data-x-woo' ); ?>
+						</em>
+					</label>
+
+				<?php endforeach; ?>
+
+			</div>
+
+		</div>
+		<?php
 	}
 
 
@@ -227,11 +437,39 @@ final class MarkupPage {
 				->all();
 
 
-		$categories =
-			$this->categories();
+		$category_tree =
+			$this->category_tree();
+
+		$category_paths = [];
+
+		$category_picker_items = [];
+
+		foreach ( $category_tree as $category ) {
+
+			$category_paths[ $category['id'] ] =
+				$category['path'];
+
+			$category_picker_items[] = [
+				'id'      => $category['id'],
+				'label'   => $category['name'],
+				'path'    => $category['path'],
+				'context' => $category['context'],
+				'depth'   => $category['depth'],
+			];
+		}
 
 		$print_options =
 			$this->print_options();
+
+		$print_picker_items = [];
+
+		foreach ( $print_options as $option ) {
+
+			$print_picker_items[] = [
+				'id'    => absint( $option->id ),
+				'label' => $this->print_option_label( $option ),
+			];
+		}
 
 		$brands =
 			$this->brands();
@@ -407,44 +645,14 @@ final class MarkupPage {
 
 			<div class="pdxw-add-rule">
 
-				<select id="pdxw-new-category">
-
-					<option value="">
-						<?php echo esc_html__( 'Select a category…', 'promi-data-x-woo' ); ?>
-					</option>
-
-					<?php foreach ( $categories as $category ) : ?>
-
-						<?php
-						$category_id =
-							absint(
-								$category->term_id
-							);
-						?>
-
-						<option
-							value="<?php echo esc_attr( $category_id ); ?>"
-							<?php disabled( in_array( $category_id, $category_rule_ids, true ) ); ?>
-						>
-							<?php
-							echo esc_html(
-								$category->name
-								. (
-									in_array(
-										$category_id,
-										$category_rule_ids,
-										true
-									)
-									? ' — ' . __( 'Already configured', 'promi-data-x-woo' )
-									: ''
-								)
-							);
-							?>
-						</option>
-
-					<?php endforeach; ?>
-
-				</select>
+				<?php
+				$this->render_picker(
+					'cat',
+					$category_picker_items,
+					$category_rule_ids,
+					__( 'Search categories…', 'promi-data-x-woo' )
+				);
+				?>
 
 				<input
 					type="number"
@@ -461,7 +669,7 @@ final class MarkupPage {
 					id="pdxw-add-category-rule"
 					class="button"
 				>
-					<?php echo esc_html__( 'Add Category Override', 'promi-data-x-woo' ); ?>
+					<?php echo esc_html__( 'Apply to selected', 'promi-data-x-woo' ); ?>
 				</button>
 
 			</div>
@@ -509,19 +717,12 @@ final class MarkupPage {
 									$rule['target_id'] ?? 0
 								);
 
-							$term =
-								get_term(
-									$category_id,
-									'product_cat'
-								);
-
 							$term_name =
-								$term instanceof \WP_Term
-									? $term->name
-									: sprintf(
-										__( 'Category #%d', 'promi-data-x-woo' ),
-										$category_id
-									);
+								$category_paths[ $category_id ]
+								?? sprintf(
+									__( 'Category #%d', 'promi-data-x-woo' ),
+									$category_id
+								);
 							?>
 
 							<tr
@@ -588,90 +789,14 @@ final class MarkupPage {
 
 			<div class="pdxw-add-rule">
 
-				<div
-					class="pdxw-po-picker"
-					style="width: 100%; max-width: 680px; margin-bottom: 10px;"
-				>
-
-					<input
-						type="search"
-						id="pdxw-po-search"
-						class="regular-text"
-						style="width: 100%;"
-						autocomplete="off"
-						placeholder="<?php echo esc_attr__( 'Search name or SKU…', 'promi-data-x-woo' ); ?>"
-					>
-
-					<div style="margin: 6px 0;">
-
-						<button
-							type="button"
-							id="pdxw-po-select-matching"
-							class="button button-small"
-						>
-							<?php echo esc_html__( 'Select all matching', 'promi-data-x-woo' ); ?>
-						</button>
-
-						<button
-							type="button"
-							id="pdxw-po-clear"
-							class="button button-small"
-						>
-							<?php echo esc_html__( 'Clear selection', 'promi-data-x-woo' ); ?>
-						</button>
-
-						<span
-							id="pdxw-po-counter"
-							class="description"
-							style="margin-left: 8px;"
-						></span>
-
-					</div>
-
-					<div
-						id="pdxw-po-list"
-						style="max-height: 260px; overflow: auto; border: 1px solid #c3c4c7; background: #fff; padding: 4px 8px;"
-					>
-
-						<?php foreach ( $print_options as $option ) : ?>
-
-							<?php
-							$option_id =
-								absint(
-									$option->id
-								);
-
-							$option_label =
-								$this->print_option_label(
-									$option
-								);
-							?>
-
-							<label
-								class="pdxw-po-item"
-								data-search="<?php echo esc_attr( function_exists( 'mb_strtolower' ) ? mb_strtolower( $option_label ) : strtolower( $option_label ) ); ?>"
-								style="display: block; padding: 2px 0;"
-							>
-								<input
-									type="checkbox"
-									value="<?php echo esc_attr( $option_id ); ?>"
-								>
-
-								<span class="pdxw-po-label"><?php echo esc_html( $option_label ); ?></span>
-
-								<em
-									class="pdxw-po-badge"
-									style="color: #2271b1; margin-left: 6px;<?php echo in_array( $option_id, $print_option_rule_ids, true ) ? '' : ' display: none;'; ?>"
-								>
-									<?php echo esc_html__( 'overridden', 'promi-data-x-woo' ); ?>
-								</em>
-							</label>
-
-						<?php endforeach; ?>
-
-					</div>
-
-				</div>
+				<?php
+				$this->render_picker(
+					'po',
+					$print_picker_items,
+					$print_option_rule_ids,
+					__( 'Search name or SKU…', 'promi-data-x-woo' )
+				);
+				?>
 
 				<input
 					type="number"
@@ -1379,42 +1504,342 @@ final class MarkupPage {
 
 			/*
 			|--------------------------------------------------------------------------
-			| Add Rules
+			| Searchable multi-select picker
+			|--------------------------------------------------------------------------
+			|
+			| Used by the category and print option sections (markup produced by
+			| MarkupPage::render_picker()). A plain checkbox list filtered
+			| client-side: it stays fast with thousands of entries, and the
+			| selection lives in a Set of ids so it survives changing the search.
+			*/
+
+			function createPicker( prefix ) {
+
+				const base =
+					'pdxw-' + prefix;
+
+				const list =
+					document.getElementById(
+						base + '-list'
+					);
+
+				const search =
+					document.getElementById(
+						base + '-search'
+					);
+
+				const counter =
+					document.getElementById(
+						base + '-counter'
+					);
+
+				const selected =
+					new Set();
+
+				const items = {};
+
+				list
+					.querySelectorAll( '.pdxw-pick-item' )
+					.forEach(
+						function ( item ) {
+
+							items[
+								item.querySelector( 'input' ).value
+							] = item;
+						}
+					);
+
+				function updateCounter() {
+
+					let shown = 0;
+
+					Object.keys( items ).forEach(
+						function ( key ) {
+
+							if ( items[ key ].style.display !== 'none' ) {
+								shown++;
+							}
+						}
+					);
+
+					counter.textContent =
+						selected.size
+						+ ' '
+						+ <?php echo wp_json_encode( __( 'selected', 'promi-data-x-woo' ) ); ?>
+						+ ' / '
+						+ shown
+						+ ' '
+						+ <?php echo wp_json_encode( __( 'shown', 'promi-data-x-woo' ) ); ?>;
+				}
+
+				function clear() {
+
+					selected.clear();
+
+					list
+						.querySelectorAll( 'input[type="checkbox"]' )
+						.forEach(
+							function ( box ) {
+								box.checked = false;
+							}
+						);
+
+					updateCounter();
+				}
+
+				function mark(
+					id,
+					overridden
+				) {
+
+					const item =
+						items[ String( id ) ];
+
+					if ( ! item ) {
+						return;
+					}
+
+					item.querySelector( '.pdxw-pick-badge' ).style.display =
+						overridden
+							? ''
+							: 'none';
+				}
+
+				// Full name used for rules-table rows (category: "A › B › C").
+				function nameOf( id ) {
+
+					const item =
+						items[ String( id ) ];
+
+					return item
+						? item.dataset.path
+						: '#' + id;
+				}
+
+				function filter() {
+
+					const words =
+						search.value
+							.toLowerCase()
+							.split( /\s+/ )
+							.filter( Boolean );
+
+					Object.keys( items ).forEach(
+						function ( key ) {
+
+							const haystack =
+								items[ key ].dataset.search;
+
+							const match =
+								words.every(
+									function ( word ) {
+										return haystack.indexOf( word ) !== -1;
+									}
+								);
+
+							items[ key ].style.display =
+								match
+									? 'block'
+									: 'none';
+						}
+					);
+
+					updateCounter();
+				}
+
+				let timer = null;
+
+				search.addEventListener(
+					'input',
+					function () {
+
+						window.clearTimeout( timer );
+
+						timer =
+							window.setTimeout(
+								filter,
+								100
+							);
+					}
+				);
+
+				list.addEventListener(
+					'change',
+					function ( event ) {
+
+						const box =
+							event.target;
+
+						if ( box.type !== 'checkbox' ) {
+							return;
+						}
+
+						if ( box.checked ) {
+							selected.add( box.value );
+						} else {
+							selected.delete( box.value );
+						}
+
+						updateCounter();
+					}
+				);
+
+				document
+					.getElementById(
+						base + '-select-matching'
+					)
+					.addEventListener(
+						'click',
+						function () {
+
+							Object.keys( items ).forEach(
+								function ( key ) {
+
+									if ( items[ key ].style.display === 'none' ) {
+										return;
+									}
+
+									items[ key ].querySelector( 'input' ).checked =
+										true;
+
+									selected.add( key );
+								}
+							);
+
+							updateCounter();
+						}
+					);
+
+				document
+					.getElementById(
+						base + '-clear'
+					)
+					.addEventListener(
+						'click',
+						clear
+					);
+
+				updateCounter();
+
+				return {
+					selected: selected,
+					mark: mark,
+					clear: clear,
+					nameOf: nameOf,
+				};
+			}
+
+
+			const categoryPicker =
+				createPicker( 'cat' );
+
+			const printPicker =
+				createPicker( 'po' );
+
+
+			/*
+			|--------------------------------------------------------------------------
+			| Apply Rules (bulk)
+			|--------------------------------------------------------------------------
+			|
+			| Rows for the selected ids are updated in place when they already
+			| exist and appended (through one fragment) when they don't.
+			*/
+
+			function upsertRuleRows(
+				tableId,
+				ids,
+				updateRow,
+				buildRow
+			) {
+
+				const tbody =
+					document
+						.querySelector(
+							'#' + tableId + ' tbody'
+						);
+
+				const emptyRow =
+					tbody.querySelector(
+						'.pdxw-empty-row'
+					);
+
+				if ( emptyRow ) {
+					emptyRow.remove();
+				}
+
+				const existing = {};
+
+				tbody
+					.querySelectorAll( 'tr[data-rule-id]' )
+					.forEach(
+						function ( row ) {
+							existing[ row.dataset.ruleId ] = row;
+						}
+					);
+
+				const fragment =
+					document.createDocumentFragment();
+
+				ids.forEach(
+					function ( id ) {
+
+						const key =
+							String( id );
+
+						if ( existing[ key ] ) {
+
+							updateRow(
+								existing[ key ]
+							);
+
+							return;
+						}
+
+						fragment.appendChild(
+							buildRow(
+								key
+							)
+						);
+					}
+				);
+
+				tbody.appendChild(
+					fragment
+				);
+			}
+
+
+			/*
+			|--------------------------------------------------------------------------
+			| Apply Category Rules
 			|--------------------------------------------------------------------------
 			*/
 
-			function addRule(
-				type,
-				selectId,
-				markupId,
-				tableId
-			) {
+			const applyCategoryButton =
+				document.getElementById(
+					'pdxw-add-category-rule'
+				);
 
-				const select =
-					document.getElementById(
-						selectId
-					);
+			function applyCategoryRules() {
 
 				const markupInput =
 					document.getElementById(
-						markupId
+						'pdxw-new-category-markup'
 					);
 
-				const id =
-					parseInt(
-						select.value,
-						10
-					);
+				const ids =
+					Array.from( categoryPicker.selected );
 
 				const markup =
 					validateMarkup(
 						markupInput.value
 					);
 
-				if ( ! id ) {
+				if ( ! ids.length ) {
 
 					showNotice(
-						<?php echo wp_json_encode( __( 'Please select an item.', 'promi-data-x-woo' ) ); ?>,
+						<?php echo wp_json_encode( __( 'Please select at least one category.', 'promi-data-x-woo' ) ); ?>,
 						'error'
 					);
 
@@ -1431,96 +1856,90 @@ final class MarkupPage {
 					return;
 				}
 
+				if (
+					! window.confirm(
+						<?php echo wp_json_encode( __( 'Apply the markup to', 'promi-data-x-woo' ) ); ?>
+						+ ' ' + ids.length + ' '
+						+ <?php echo wp_json_encode( __( 'categories:', 'promi-data-x-woo' ) ); ?>
+						+ ' ' + markup + '%. '
+						+ <?php echo wp_json_encode( __( 'Existing overrides of these categories are replaced.', 'promi-data-x-woo' ) ); ?>
+					)
+				) {
+					return;
+				}
+
+				applyCategoryButton.disabled = true;
+
 				apiFetch(
-					getRulePath(
-						type,
-						id
-					),
+					'/pricing/categories/bulk',
 					'POST',
 					{
+						ids:
+							ids,
+
 						markup_percent:
 							markup,
 					}
 				)
 				.then(
-					function () {
+					function ( data ) {
 
-						const option =
-							select.options[
-								select.selectedIndex
-							];
+						upsertRuleRows(
+							'pdxw-category-rules',
+							ids,
+							function ( row ) {
 
-						const name =
-							option.text
-								.replace(
-									' — <?php echo esc_js( __( 'Already configured', 'promi-data-x-woo' ) ); ?>',
-									''
-								);
+								row.querySelector( '.pdxw-rule-markup' ).value =
+									markup;
+							},
+							function ( key ) {
 
-						const tbody =
-							document
-								.querySelector(
-									'#'
-									+ tableId
-									+ ' tbody'
-								);
+								const row =
+									document.createElement(
+										'tr'
+									);
 
-						const emptyRow =
-							tbody.querySelector(
-								'.pdxw-empty-row'
-							);
+								row.dataset.ruleType =
+									categoryType;
 
-						if ( emptyRow ) {
-							emptyRow.remove();
-						}
+								row.dataset.ruleId =
+									key;
 
-						const row =
-							document.createElement(
-								'tr'
-							);
+								row.innerHTML =
+									'<td class="pdxw-rule-name">'
+									+ escapeHtml( categoryPicker.nameOf( key ) )
+									+ '</td>'
+									+ '<td>'
+									+ '<input type="number" class="small-text pdxw-rule-markup" '
+									+ 'value="' + markup + '" min="0" step="0.01">'
+									+ '</td>'
+									+ '<td>'
+									+ '<button type="button" class="button button-small pdxw-save-rule">'
+									+ <?php echo wp_json_encode( __( 'Save', 'promi-data-x-woo' ) ); ?>
+									+ '</button> '
+									+ '<button type="button" class="button button-small pdxw-delete-rule">'
+									+ <?php echo wp_json_encode( __( 'Remove', 'promi-data-x-woo' ) ); ?>
+									+ '</button>'
+									+ '</td>';
 
-						row.dataset.ruleType =
-							type;
-
-						row.dataset.ruleId =
-							id;
-
-						row.innerHTML =
-							'<td class="pdxw-rule-name">'
-							+ escapeHtml( name )
-							+ '</td>'
-							+ '<td>'
-							+ '<input type="number" class="small-text pdxw-rule-markup" '
-							+ 'value="' + markup + '" min="0" step="0.01">'
-							+ '</td>'
-							+ '<td>'
-							+ '<button type="button" class="button button-small pdxw-save-rule">'
-							+ <?php echo wp_json_encode( __( 'Save', 'promi-data-x-woo' ) ); ?>
-							+ '</button> '
-							+ '<button type="button" class="button button-small pdxw-delete-rule">'
-							+ <?php echo wp_json_encode( __( 'Remove', 'promi-data-x-woo' ) ); ?>
-							+ '</button>'
-							+ '</td>';
-
-						tbody.appendChild(
-							row
+								return row;
+							}
 						);
 
-						select
-							.querySelector(
-								'option[value="'
-								+ id
-								+ '"]'
-							)
-							.disabled =
-								true;
+						ids.forEach(
+							function ( id ) {
+								categoryPicker.mark( id, true );
+							}
+						);
 
-						select.value = '';
+						categoryPicker.clear();
 
 						markupInput.value = '';
 
 						showNotice(
-							<?php echo wp_json_encode( __( 'Markup override added.', 'promi-data-x-woo' ) ); ?>,
+							( data.updated || ids.length )
+							+ ' '
+							+ <?php echo wp_json_encode( __( 'category markup override(s) saved. Catalog prices are being updated.', 'promi-data-x-woo' ) ); ?>,
 							'success'
 						);
 					}
@@ -1530,42 +1949,38 @@ final class MarkupPage {
 
 						showNotice(
 							error.message
-							|| <?php echo wp_json_encode( __( 'Error adding markup override.', 'promi-data-x-woo' ) ); ?>,
+							|| <?php echo wp_json_encode( __( 'Error saving markup overrides.', 'promi-data-x-woo' ) ); ?>,
 							'error'
 						);
+					}
+				)
+				.finally(
+					function () {
+						applyCategoryButton.disabled = false;
 					}
 				);
 			}
 
-
-			document
-				.getElementById(
-					'pdxw-add-category-rule'
-				)
-				.addEventListener(
-					'click',
-					function () {
-
-						addRule(
-							categoryType,
-							'pdxw-new-category',
-							'pdxw-new-category-markup',
-							'pdxw-category-rules'
-						);
-					}
-				);
+			applyCategoryButton.addEventListener(
+				'click',
+				applyCategoryRules
+			);
 
 
 			/*
 			|--------------------------------------------------------------------------
-			| Apply Print Option Rules (bulk)
+			| Apply Print Option Rules
 			|--------------------------------------------------------------------------
 			|
 			| Print options have two independent markup values (price and
-			| fee), so they can't reuse the single-value addRule() helper
-			| used for categories. One price/fee pair is applied to every
-			| option selected in the picker below, in a single request.
+			| fee). One price/fee pair is applied to every selected option in a
+			| single request.
 			*/
+
+			const applyPrintButton =
+				document.getElementById(
+					'pdxw-add-print-option-rule'
+				);
 
 			function applyPrintOptionRules() {
 
@@ -1580,7 +1995,7 @@ final class MarkupPage {
 					);
 
 				const ids =
-					Array.from( selectedPrintOptions );
+					Array.from( printPicker.selected );
 
 				const priceMarkup =
 					validateMarkup(
@@ -1632,7 +2047,7 @@ final class MarkupPage {
 					return;
 				}
 
-				applyButton.disabled = true;
+				applyPrintButton.disabled = true;
 
 				apiFetch(
 					'/pricing/print-options/bulk',
@@ -1651,119 +2066,59 @@ final class MarkupPage {
 				.then(
 					function ( data ) {
 
-						const tbody =
-							document
-								.querySelector(
-									'#pdxw-print-option-rules tbody'
-								);
+						upsertRuleRows(
+							'pdxw-print-option-rules',
+							ids,
+							function ( row ) {
 
-						const emptyRow =
-							tbody.querySelector(
-								'.pdxw-empty-row'
-							);
+								row.querySelector( '.pdxw-rule-price-markup' ).value =
+									priceMarkup;
 
-						if ( emptyRow ) {
-							emptyRow.remove();
-						}
+								row.querySelector( '.pdxw-rule-fee-markup' ).value =
+									feeMarkup;
+							},
+							function ( key ) {
 
-						// Existing rows by option id, so re-applying updates them
-						// in place instead of adding duplicates.
-						const existing = {};
-
-						tbody
-							.querySelectorAll( 'tr[data-rule-id]' )
-							.forEach(
-								function ( row ) {
-									existing[ row.dataset.ruleId ] = row;
-								}
-							);
-
-						const fragment =
-							document.createDocumentFragment();
-
-						ids.forEach(
-							function ( id ) {
-
-								const key =
-									String( id );
-
-								let row =
-									existing[ key ];
-
-								if ( row ) {
-
-									row.querySelector( '.pdxw-rule-price-markup' ).value =
-										priceMarkup;
-
-									row.querySelector( '.pdxw-rule-fee-markup' ).value =
-										feeMarkup;
-
-								} else {
-
-									const item =
-										printOptionItems[ key ];
-
-									const name =
-										item
-											? item.querySelector( '.pdxw-po-label' ).textContent
-											: 'Print Option #' + key;
-
-									row =
-										document.createElement(
-											'tr'
-										);
-
-									row.dataset.ruleId =
-										key;
-
-									row.innerHTML =
-										'<td class="pdxw-rule-name">'
-										+ escapeHtml( name )
-										+ '</td>'
-										+ '<td>'
-										+ '<input type="number" class="small-text pdxw-rule-price-markup" '
-										+ 'value="' + priceMarkup + '" min="0" step="0.01">'
-										+ '</td>'
-										+ '<td>'
-										+ '<input type="number" class="small-text pdxw-rule-fee-markup" '
-										+ 'value="' + feeMarkup + '" min="0" step="0.01">'
-										+ '</td>'
-										+ '<td>'
-										+ '<button type="button" class="button button-small pdxw-save-print-option-rule">'
-										+ <?php echo wp_json_encode( __( 'Save', 'promi-data-x-woo' ) ); ?>
-										+ '</button> '
-										+ '<button type="button" class="button button-small pdxw-delete-print-option-rule">'
-										+ <?php echo wp_json_encode( __( 'Remove', 'promi-data-x-woo' ) ); ?>
-										+ '</button>'
-										+ '</td>';
-
-									fragment.appendChild(
-										row
+								const row =
+									document.createElement(
+										'tr'
 									);
-								}
 
-								markPrintOptionOverridden(
-									key,
-									true
-								);
+								row.dataset.ruleId =
+									key;
+
+								row.innerHTML =
+									'<td class="pdxw-rule-name">'
+									+ escapeHtml( printPicker.nameOf( key ) )
+									+ '</td>'
+									+ '<td>'
+									+ '<input type="number" class="small-text pdxw-rule-price-markup" '
+									+ 'value="' + priceMarkup + '" min="0" step="0.01">'
+									+ '</td>'
+									+ '<td>'
+									+ '<input type="number" class="small-text pdxw-rule-fee-markup" '
+									+ 'value="' + feeMarkup + '" min="0" step="0.01">'
+									+ '</td>'
+									+ '<td>'
+									+ '<button type="button" class="button button-small pdxw-save-print-option-rule">'
+									+ <?php echo wp_json_encode( __( 'Save', 'promi-data-x-woo' ) ); ?>
+									+ '</button> '
+									+ '<button type="button" class="button button-small pdxw-delete-print-option-rule">'
+									+ <?php echo wp_json_encode( __( 'Remove', 'promi-data-x-woo' ) ); ?>
+									+ '</button>'
+									+ '</td>';
+
+								return row;
 							}
 						);
 
-						tbody.appendChild(
-							fragment
+						ids.forEach(
+							function ( id ) {
+								printPicker.mark( id, true );
+							}
 						);
 
-						selectedPrintOptions.clear();
-
-						printOptionList
-							.querySelectorAll( 'input[type="checkbox"]' )
-							.forEach(
-								function ( box ) {
-									box.checked = false;
-								}
-							);
-
-						updatePrintOptionCounter();
+						printPicker.clear();
 
 						priceInput.value = '';
 
@@ -1789,223 +2144,12 @@ final class MarkupPage {
 				)
 				.finally(
 					function () {
-						applyButton.disabled = false;
+						applyPrintButton.disabled = false;
 					}
 				);
 			}
 
-
-			/*
-			|--------------------------------------------------------------------------
-			| Print option picker: search + multi-select
-			|--------------------------------------------------------------------------
-			|
-			| A plain checkbox list (4,600+ entries) filtered client-side. The
-			| selection lives in a Set of ids, so it survives changing the search.
-			*/
-
-			const printOptionList =
-				document.getElementById(
-					'pdxw-po-list'
-				);
-
-			const printOptionSearch =
-				document.getElementById(
-					'pdxw-po-search'
-				);
-
-			const printOptionCounter =
-				document.getElementById(
-					'pdxw-po-counter'
-				);
-
-			const applyButton =
-				document.getElementById(
-					'pdxw-add-print-option-rule'
-				);
-
-			const selectedPrintOptions =
-				new Set();
-
-			const printOptionItems = {};
-
-			printOptionList
-				.querySelectorAll( '.pdxw-po-item' )
-				.forEach(
-					function ( item ) {
-
-						printOptionItems[
-							item.querySelector( 'input' ).value
-						] = item;
-					}
-				);
-
-			function updatePrintOptionCounter() {
-
-				let shown = 0;
-
-				Object.keys( printOptionItems ).forEach(
-					function ( key ) {
-
-						if ( printOptionItems[ key ].style.display !== 'none' ) {
-							shown++;
-						}
-					}
-				);
-
-				printOptionCounter.textContent =
-					selectedPrintOptions.size
-					+ ' '
-					+ <?php echo wp_json_encode( __( 'selected', 'promi-data-x-woo' ) ); ?>
-					+ ' / '
-					+ shown
-					+ ' '
-					+ <?php echo wp_json_encode( __( 'shown', 'promi-data-x-woo' ) ); ?>;
-			}
-
-			function markPrintOptionOverridden(
-				id,
-				overridden
-			) {
-
-				const item =
-					printOptionItems[ String( id ) ];
-
-				if ( ! item ) {
-					return;
-				}
-
-				item.querySelector( '.pdxw-po-badge' ).style.display =
-					overridden
-						? ''
-						: 'none';
-			}
-
-			function filterPrintOptions() {
-
-				const words =
-					printOptionSearch.value
-						.toLowerCase()
-						.split( /\s+/ )
-						.filter( Boolean );
-
-				Object.keys( printOptionItems ).forEach(
-					function ( key ) {
-
-						const item =
-							printOptionItems[ key ];
-
-						const haystack =
-							item.dataset.search;
-
-						const match =
-							words.every(
-								function ( word ) {
-									return haystack.indexOf( word ) !== -1;
-								}
-							);
-
-						item.style.display =
-							match
-								? 'block'
-								: 'none';
-					}
-				);
-
-				updatePrintOptionCounter();
-			}
-
-			let printOptionFilterTimer = null;
-
-			printOptionSearch.addEventListener(
-				'input',
-				function () {
-
-					window.clearTimeout( printOptionFilterTimer );
-
-					printOptionFilterTimer =
-						window.setTimeout(
-							filterPrintOptions,
-							100
-						);
-				}
-			);
-
-			printOptionList.addEventListener(
-				'change',
-				function ( event ) {
-
-					const box =
-						event.target;
-
-					if ( box.type !== 'checkbox' ) {
-						return;
-					}
-
-					if ( box.checked ) {
-						selectedPrintOptions.add( box.value );
-					} else {
-						selectedPrintOptions.delete( box.value );
-					}
-
-					updatePrintOptionCounter();
-				}
-			);
-
-			document
-				.getElementById(
-					'pdxw-po-select-matching'
-				)
-				.addEventListener(
-					'click',
-					function () {
-
-						Object.keys( printOptionItems ).forEach(
-							function ( key ) {
-
-								const item =
-									printOptionItems[ key ];
-
-								if ( item.style.display === 'none' ) {
-									return;
-								}
-
-								item.querySelector( 'input' ).checked =
-									true;
-
-								selectedPrintOptions.add( key );
-							}
-						);
-
-						updatePrintOptionCounter();
-					}
-				);
-
-			document
-				.getElementById(
-					'pdxw-po-clear'
-				)
-				.addEventListener(
-					'click',
-					function () {
-
-						selectedPrintOptions.clear();
-
-						printOptionList
-							.querySelectorAll( 'input[type="checkbox"]' )
-							.forEach(
-								function ( box ) {
-									box.checked = false;
-								}
-							);
-
-						updatePrintOptionCounter();
-					}
-				);
-
-			updatePrintOptionCounter();
-
-			applyButton.addEventListener(
+			applyPrintButton.addEventListener(
 				'click',
 				applyPrintOptionRules
 			);
@@ -2596,7 +2740,7 @@ final class MarkupPage {
 
 								row.remove();
 
-								markPrintOptionOverridden(
+								printPicker.mark(
 									id,
 									false
 								);
@@ -3097,30 +3241,13 @@ final class MarkupPage {
 							row.remove();
 
 
-							if ( type === categoryType ) {
-
-								const option =
-									document
-										.getElementById(
-											'pdxw-new-category'
-										)
-										.querySelector(
-											'option[value="'
-											+ id
-											+ '"]'
-										);
-
-								if ( option ) {
-									option.disabled = false;
-								}
-
-							} else {
-
-								markPrintOptionOverridden(
-									id,
-									false
-								);
-							}
+							( type === categoryType
+								? categoryPicker
+								: printPicker
+							).mark(
+								id,
+								false
+							);
 
 
 							const tbody =
