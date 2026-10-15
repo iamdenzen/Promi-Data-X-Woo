@@ -22,15 +22,15 @@ defined( 'ABSPATH' ) || exit;
  * This class does NOT apply customer markups.
  *
  * It returns the raw Promi-side fee amounts. The Printing Calculator then
- * applies the configured finishing markup and the appropriate rounding rule:
+ * applies the configured print fee markup and the appropriate rounding rule:
  *
  *     setup fee
  *         → markup
- *         → nearest whole euro
+ *         → whole euro, then a price ending in 9
  *
  *     ongoing fee
  *         → markup
- *         → no rounding
+ *         → rounded once to cents
  */
 final class Fees {
 

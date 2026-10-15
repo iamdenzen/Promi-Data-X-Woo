@@ -1201,6 +1201,57 @@ final class TieredPricing {
 	*/
 
 	/**
+	 * Re-calculate and store the WooCommerce catalog price of one
+	 * product / variation from its existing tiers.
+	 *
+	 * Used by PriceSync when a markup or discount rule changes, so the
+	 * stored catalog price (grid, slider, search, price filter and sort)
+	 * follows the rules without re-importing from Promi.
+	 */
+	public function refresh_woocommerce_price(
+		int $product_id,
+		int $variation_id = 0
+	): void {
+
+		$product_id =
+			absint(
+				$product_id
+			);
+
+		$variation_id =
+			absint(
+				$variation_id
+			);
+
+		if ( ! $product_id ) {
+			return;
+		}
+
+		$tiers = [];
+
+		foreach (
+			$this->repository
+				->get_target_quantities(
+					$product_id,
+					$variation_id
+				) as $quantity
+		) {
+
+			$tiers[] = [
+				'qty' =>
+					(int) $quantity,
+			];
+		}
+
+		$this->sync_woocommerce_price_from_tiers(
+			$product_id,
+			$variation_id,
+			$tiers
+		);
+	}
+
+
+	/**
 	 * Synchronize WooCommerce's stored catalog price from the calculated
 	 * article price.
 	 *

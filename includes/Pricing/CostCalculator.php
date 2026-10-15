@@ -26,7 +26,15 @@ defined( 'ABSPATH' ) || exit;
  *     cost =
  *         RecommendedSellingPrice
  *         ×
- *         (1 - manufacturer_discount / 100)
+ *         (1 - discount / 100)
+ *
+ *     where discount is, in priority order:
+ *
+ *         1. the brand's manufacturer discount (product_brand), when the
+ *            brand has one configured (an explicit 0% still wins),
+ *         2. otherwise the supplier discount of the longest matching
+ *            SKU prefix (e.g. "A86-"),
+ *         3. otherwise 0.
  *
  * Case 3:
  *
@@ -96,6 +104,12 @@ final class CostCalculator {
 
 
 	/**
+	 * Supplier (SKU prefix) discount service.
+	 */
+	private SupplierDiscount $supplier_discount;
+
+
+	/**
 	 * Selling-price calculation service.
 	 */
 	private SellingPriceCalculator $selling_prices;
@@ -108,6 +122,7 @@ final class CostCalculator {
 		PriceRepository $repository,
 		MarkupRules $rules,
 		ManufacturerDiscount $manufacturer_discount,
+		SupplierDiscount $supplier_discount,
 		SellingPriceCalculator $selling_prices
 	) {
 
@@ -119,6 +134,9 @@ final class CostCalculator {
 
 		$this->manufacturer_discount =
 			$manufacturer_discount;
+
+		$this->supplier_discount =
+			$supplier_discount;
 
 		$this->selling_prices =
 			$selling_prices;
@@ -233,6 +251,9 @@ final class CostCalculator {
 						'manufacturer_discount'
 					],
 
+				'discount_source' =>
+					'none',
+
 				'tier' =>
 					$cost_result['tier'],
 			];
@@ -279,6 +300,12 @@ final class CostCalculator {
 				(float) $cost_result[
 					'manufacturer_discount'
 				],
+
+			'discount_source' =>
+				(string) (
+					$cost_result['discount_source']
+						?? 'none'
+				),
 
 			'tier' =>
 				$cost_result['tier'],
@@ -505,11 +532,63 @@ final class CostCalculator {
 			null !== $recommended_price
 		) {
 
+			/*
+			 * Discount priority:
+			 *
+			 *     1. Manufacturer discount (product_brand), when the brand
+			 *        has one configured (an explicit 0% still counts).
+			 *     2. Supplier discount (SKU prefix, longest prefix wins).
+			 *     3. No discount.
+			 */
+
+			$discount_source =
+				'none';
+
 			$manufacturer_discount =
+				0.0;
+
+			if (
 				$this->manufacturer_discount
-					->get_for_product(
+					->has_for_product(
 						$product_id
+					)
+			) {
+
+				$discount_source =
+					'manufacturer';
+
+				$manufacturer_discount =
+					$this->manufacturer_discount
+						->get_for_product(
+							$product_id
+						);
+
+			} else {
+
+				$supplier_sku =
+					(string) get_post_meta(
+						$product_id,
+						'_sku',
+						true
 					);
+
+				if (
+					$this->supplier_discount
+						->has_for_sku(
+							$supplier_sku
+						)
+				) {
+
+					$discount_source =
+						'supplier';
+
+					$manufacturer_discount =
+						$this->supplier_discount
+							->get_for_sku(
+								$supplier_sku
+							);
+				}
+			}
 
 
 			$cost =
@@ -533,8 +612,16 @@ final class CostCalculator {
 				'source' =>
 					'recommended_selling_price',
 
+				/*
+				 * The effective discount applied to the RRP. Despite the
+				 * key name (kept for existing consumers) this is the
+				 * supplier discount when discount_source is "supplier".
+				 */
 				'manufacturer_discount' =>
 					(float) $manufacturer_discount,
+
+				'discount_source' =>
+					$discount_source,
 
 				'tier' =>
 					$tier,

@@ -15,7 +15,7 @@ defined( 'ABSPATH' ) || exit;
  */
 final class Database {
 
-	public const VERSION = '1.5.3';
+	public const VERSION = '1.5.4';
 
 	public const VERSION_OPTION = 'pdxw_db_version';
 
@@ -89,6 +89,9 @@ final class Database {
 
 			'pricing_markup_rules' =>
 				'cx_pricing_markup_rules',
+
+			'supplier_discounts' =>
+				'cx_supplier_discounts',
 
 
 			/*
@@ -578,7 +581,7 @@ final class Database {
 		|
 		| markup_percent:
 		|
-		|     25 = 25%
+		|     25 = 25%   (0 = no markup)
 		|
 		| Default markups are stored as WordPress options, not rows here.
 		|--------------------------------------------------------------------------
@@ -592,7 +595,7 @@ final class Database {
 			id bigint unsigned NOT NULL AUTO_INCREMENT,
 			rule_type varchar(30) NOT NULL,
 			target_id bigint unsigned NOT NULL,
-			markup_percent decimal(10,4) NOT NULL DEFAULT 25.0000,
+			markup_percent decimal(10,4) NOT NULL DEFAULT 0.0000,
 			enabled tinyint(1) NOT NULL DEFAULT 1,
 			created_at datetime DEFAULT CURRENT_TIMESTAMP,
 			updated_at datetime DEFAULT CURRENT_TIMESTAMP,
@@ -604,6 +607,53 @@ final class Database {
 		) {$charset};";
 
 		dbDelta( $sql );
+
+
+		/*
+		|--------------------------------------------------------------------------
+		| Supplier Discounts
+		|--------------------------------------------------------------------------
+		|
+		| sku_prefix
+		|     Product SKU prefix, e.g. "A86-". Matching is case-insensitive
+		|     and the longest matching prefix wins.
+		|
+		| discount_percent
+		|     30 = 30%. Applied to the recommended selling price when the
+		|     product's brand has no manufacturer discount.
+		*/
+
+		$table = self::table(
+			'supplier_discounts'
+		);
+
+		$sql = "CREATE TABLE {$table} (
+			id bigint unsigned NOT NULL AUTO_INCREMENT,
+			sku_prefix varchar(100) NOT NULL,
+			discount_percent decimal(10,4) NOT NULL DEFAULT 0.0000,
+			enabled tinyint(1) NOT NULL DEFAULT 1,
+			created_at datetime DEFAULT CURRENT_TIMESTAMP,
+			updated_at datetime DEFAULT CURRENT_TIMESTAMP,
+			PRIMARY KEY  (id),
+			UNIQUE KEY sku_prefix_unique (sku_prefix),
+			KEY enabled_idx (enabled)
+		) {$charset};";
+
+		dbDelta( $sql );
+
+
+		/*
+		|--------------------------------------------------------------------------
+		| Retired options
+		|--------------------------------------------------------------------------
+		|
+		| The default finishing markup was never used by the pricing path
+		| (only the print price / print fee defaults are).
+		*/
+
+		delete_option(
+			'pdxw_default_finishing_markup'
+		);
 
 
 		/*
@@ -777,6 +827,7 @@ final class Database {
 			'print_fees',
 			'print_relation',
 			'pricing_markup_rules',
+			'supplier_discounts',
 			'inquiries',
 			'supplier_sources',
 		];

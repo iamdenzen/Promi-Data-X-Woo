@@ -191,6 +191,12 @@ final class MarkupPage {
 				->all();
 
 
+		$supplier_discounts =
+			$this->pricing
+				->supplier_discount()
+				->all();
+
+
 		$categories =
 			$this->categories();
 
@@ -417,7 +423,7 @@ final class MarkupPage {
 					value=""
 					min="0"
 					step="0.01"
-					placeholder="25"
+					placeholder="0"
 				>
 
 				<button
@@ -546,7 +552,7 @@ final class MarkupPage {
 			</h2>
 
 			<p class="description">
-				<?php echo esc_html__( 'A print-option-specific markup overrides the default finishing markup.', 'promi-data-x-woo' ); ?>
+				<?php echo esc_html__( 'A print-option-specific markup overrides the default print option price / fee markup.', 'promi-data-x-woo' ); ?>
 			</p>
 
 
@@ -768,7 +774,7 @@ final class MarkupPage {
 			</h2>
 
 			<p class="description">
-				<?php echo esc_html__( 'Applied when a product\'s Promi cost is unavailable and its price is derived from the manufacturer\'s recommended selling price (RRP) instead. The discount converts the RRP into an effective cost basis before markup. Configured per brand (WooCommerce product_brand taxonomy).', 'promi-data-x-woo' ); ?>
+				<?php echo esc_html__( 'Applied when a product\'s Promi cost is unavailable and its price is derived from the manufacturer\'s recommended selling price (RRP) instead. The discount converts the RRP into an effective cost basis before markup. Configured per brand (WooCommerce product_brand taxonomy). Takes priority over Supplier Discounts.', 'promi-data-x-woo' ); ?>
 			</p>
 
 
@@ -924,6 +930,167 @@ final class MarkupPage {
 				</tbody>
 
 			</table>
+
+
+			<hr>
+
+
+			<!-- Supplier Discounts -->
+
+			<h2>
+				<?php echo esc_html__( 'Supplier Discounts', 'promi-data-x-woo' ); ?>
+			</h2>
+
+			<p class="description">
+				<?php echo esc_html__( 'Applied like a Manufacturer Discount (to the recommended selling price, before markup), but matched on the product SKU. Enter the start of the SKU, for example "A86-", and every product whose SKU starts with it gets the discount. The longest matching prefix wins. Priority: Manufacturer Discount first; a Supplier Discount only applies when the product\'s brand has no Manufacturer Discount configured.', 'promi-data-x-woo' ); ?>
+			</p>
+
+
+			<div class="pdxw-add-rule">
+
+				<input
+					type="text"
+					id="pdxw-new-supplier-prefix"
+					class="regular-text"
+					value=""
+					maxlength="100"
+					placeholder="A86-"
+				>
+
+				<input
+					type="number"
+					id="pdxw-new-supplier-discount"
+					class="small-text"
+					value=""
+					min="0"
+					max="100"
+					step="0.01"
+					placeholder="0"
+				>
+
+				<button
+					type="button"
+					id="pdxw-add-supplier-rule"
+					class="button"
+				>
+					<?php echo esc_html__( 'Add Supplier Discount', 'promi-data-x-woo' ); ?>
+				</button>
+
+			</div>
+
+
+			<table
+				class="wp-list-table widefat fixed striped"
+				id="pdxw-supplier-rules"
+				style="margin-top: 16px;"
+			>
+
+				<thead>
+					<tr>
+						<th>
+							<?php echo esc_html__( 'SKU starts with', 'promi-data-x-woo' ); ?>
+						</th>
+
+						<th>
+							<?php echo esc_html__( 'Discount (%)', 'promi-data-x-woo' ); ?>
+						</th>
+
+						<th>
+							<?php echo esc_html__( 'Actions', 'promi-data-x-woo' ); ?>
+						</th>
+					</tr>
+				</thead>
+
+				<tbody>
+
+					<?php if ( empty( $supplier_discounts ) ) : ?>
+
+						<tr class="pdxw-empty-row">
+							<td colspan="3">
+								<?php echo esc_html__( 'No supplier discounts configured.', 'promi-data-x-woo' ); ?>
+							</td>
+						</tr>
+
+					<?php else : ?>
+
+						<?php foreach ( $supplier_discounts as $rule ) : ?>
+
+							<tr
+								data-prefix="<?php echo esc_attr( (string) ( $rule['sku_prefix'] ?? '' ) ); ?>"
+							>
+
+								<td class="pdxw-rule-name">
+									<?php echo esc_html( (string) ( $rule['sku_prefix'] ?? '' ) ); ?>
+								</td>
+
+								<td>
+									<input
+										type="number"
+										class="small-text pdxw-rule-discount"
+										value="<?php echo esc_attr( $rule['discount_percent'] ?? 0 ); ?>"
+										min="0"
+										max="100"
+										step="0.01"
+									>
+								</td>
+
+								<td>
+
+									<button
+										type="button"
+										class="button button-small pdxw-save-supplier-rule"
+									>
+										<?php echo esc_html__( 'Save', 'promi-data-x-woo' ); ?>
+									</button>
+
+									<button
+										type="button"
+										class="button button-small pdxw-delete-supplier-rule"
+									>
+										<?php echo esc_html__( 'Remove', 'promi-data-x-woo' ); ?>
+									</button>
+
+								</td>
+
+							</tr>
+
+						<?php endforeach; ?>
+
+					<?php endif; ?>
+
+				</tbody>
+
+			</table>
+
+
+			<hr>
+
+
+			<!-- Catalog price recalculation -->
+
+			<h2>
+				<?php echo esc_html__( 'Catalog Prices', 'promi-data-x-woo' ); ?>
+			</h2>
+
+			<p class="description">
+				<?php echo esc_html__( 'The shop grid, sliders, search, price filter and price sort use a stored price. It is refreshed automatically in the background whenever a markup or discount above changes, or a product\'s category or brand changes. Use this button to force a full recalculation, for example after a bulk import.', 'promi-data-x-woo' ); ?>
+			</p>
+
+			<p>
+				<button
+					type="button"
+					id="pdxw-reprice-all"
+					class="button"
+				>
+					<?php echo esc_html__( 'Recalculate all catalog prices', 'promi-data-x-woo' ); ?>
+				</button>
+
+				<span
+					id="pdxw-reprice-status"
+					class="description"
+					style="margin-left: 8px;"
+				></span>
+			</p>
 
 		</div>
 
@@ -1688,6 +1855,269 @@ final class MarkupPage {
 
 			/*
 			|--------------------------------------------------------------------------
+			| Add Supplier Discount Rule (SKU prefix)
+			|--------------------------------------------------------------------------
+			*/
+
+			function addSupplierRule() {
+
+				const prefixInput =
+					document.getElementById(
+						'pdxw-new-supplier-prefix'
+					);
+
+				const discountInput =
+					document.getElementById(
+						'pdxw-new-supplier-discount'
+					);
+
+				const prefix =
+					prefixInput.value
+						.trim()
+						.toUpperCase();
+
+				const discount =
+					validateDiscount(
+						discountInput.value
+					);
+
+				if ( ! prefix ) {
+
+					showNotice(
+						<?php echo wp_json_encode( __( 'Please enter a SKU prefix, for example A86-.', 'promi-data-x-woo' ) ); ?>,
+						'error'
+					);
+
+					return;
+				}
+
+				if ( null === discount ) {
+
+					showNotice(
+						<?php echo wp_json_encode( __( 'Please enter a discount between 0 and 100.', 'promi-data-x-woo' ) ); ?>,
+						'error'
+					);
+
+					return;
+				}
+
+				apiFetch(
+					'/pricing/supplier-discounts',
+					'POST',
+					{
+						sku_prefix:
+							prefix,
+
+						discount_percent:
+							discount,
+					}
+				)
+				.then(
+					function () {
+
+						const tbody =
+							document
+								.querySelector(
+									'#pdxw-supplier-rules tbody'
+								);
+
+						const emptyRow =
+							tbody.querySelector(
+								'.pdxw-empty-row'
+							);
+
+						if ( emptyRow ) {
+							emptyRow.remove();
+						}
+
+						// Saving an existing prefix updates it instead of
+						// adding a second row.
+						let row = null;
+
+						tbody
+							.querySelectorAll( 'tr' )
+							.forEach(
+								function ( candidate ) {
+
+									if ( candidate.dataset.prefix === prefix ) {
+										row = candidate;
+									}
+								}
+							);
+
+						if ( row ) {
+
+							row
+								.querySelector( '.pdxw-rule-discount' )
+								.value = discount;
+
+						} else {
+
+							row =
+								document.createElement(
+									'tr'
+								);
+
+							row.dataset.prefix =
+								prefix;
+
+							row.innerHTML =
+								'<td class="pdxw-rule-name">'
+								+ escapeHtml( prefix )
+								+ '</td>'
+								+ '<td>'
+								+ '<input type="number" class="small-text pdxw-rule-discount" '
+								+ 'value="' + discount + '" min="0" max="100" step="0.01">'
+								+ '</td>'
+								+ '<td>'
+								+ '<button type="button" class="button button-small pdxw-save-supplier-rule">'
+								+ <?php echo wp_json_encode( __( 'Save', 'promi-data-x-woo' ) ); ?>
+								+ '</button> '
+								+ '<button type="button" class="button button-small pdxw-delete-supplier-rule">'
+								+ <?php echo wp_json_encode( __( 'Remove', 'promi-data-x-woo' ) ); ?>
+								+ '</button>'
+								+ '</td>';
+
+							tbody.appendChild(
+								row
+							);
+						}
+
+						prefixInput.value = '';
+
+						discountInput.value = '';
+
+						showNotice(
+							<?php echo wp_json_encode( __( 'Supplier discount saved. Catalog prices are being updated.', 'promi-data-x-woo' ) ); ?>,
+							'success'
+						);
+					}
+				)
+				.catch(
+					function ( error ) {
+
+						showNotice(
+							error.message
+							|| <?php echo wp_json_encode( __( 'Error saving supplier discount.', 'promi-data-x-woo' ) ); ?>,
+							'error'
+						);
+					}
+				);
+			}
+
+
+			document
+				.getElementById(
+					'pdxw-add-supplier-rule'
+				)
+				.addEventListener(
+					'click',
+					addSupplierRule
+				);
+
+
+			/*
+			|--------------------------------------------------------------------------
+			| Recalculate All Catalog Prices
+			|--------------------------------------------------------------------------
+			*/
+
+			const repriceStatus =
+				document.getElementById(
+					'pdxw-reprice-status'
+				);
+
+			function showRepriceStatus(
+				pending
+			) {
+
+				repriceStatus.textContent =
+					pending > 0
+						? pending
+							+ ' '
+							+ <?php echo wp_json_encode( __( 'background job(s) pending…', 'promi-data-x-woo' ) ); ?>
+						: '';
+			}
+
+			function pollReprice() {
+
+				apiFetch(
+					'/pricing/reprice'
+				)
+				.then(
+					function ( data ) {
+
+						showRepriceStatus(
+							data.pending_jobs || 0
+						);
+
+						if ( data.pending_jobs > 0 ) {
+							window.setTimeout(
+								pollReprice,
+								5000
+							);
+						}
+					}
+				)
+				.catch(
+					function () {}
+				);
+			}
+
+			document
+				.getElementById(
+					'pdxw-reprice-all'
+				)
+				.addEventListener(
+					'click',
+					function () {
+
+						apiFetch(
+							'/pricing/reprice',
+							'POST'
+						)
+						.then(
+							function ( data ) {
+
+								showNotice(
+									<?php echo wp_json_encode( __( 'Catalog price recalculation started for', 'promi-data-x-woo' ) ); ?>
+									+ ' '
+									+ ( data.products || 0 )
+									+ ' '
+									+ <?php echo wp_json_encode( __( 'products.', 'promi-data-x-woo' ) ); ?>,
+									'success'
+								);
+
+								showRepriceStatus(
+									data.pending_jobs || 0
+								);
+
+								if ( data.pending_jobs > 0 ) {
+									window.setTimeout(
+										pollReprice,
+										5000
+									);
+								}
+							}
+						)
+						.catch(
+							function ( error ) {
+
+								showNotice(
+									error.message
+									|| <?php echo wp_json_encode( __( 'Error starting recalculation.', 'promi-data-x-woo' ) ); ?>,
+									'error'
+								);
+							}
+						);
+					}
+				);
+
+			pollReprice();
+
+
+			/*
+			|--------------------------------------------------------------------------
 			| Save And Delete Existing Rules
 			|--------------------------------------------------------------------------
 			*/
@@ -1872,6 +2302,159 @@ final class MarkupPage {
 								showNotice(
 									error.message
 									|| <?php echo wp_json_encode( __( 'Error removing markup override.', 'promi-data-x-woo' ) ); ?>,
+									'error'
+								);
+							}
+						);
+
+						return;
+					}
+
+
+					/*
+					|--------------------------------------------------------------------------
+					| Supplier Discount Rules (SKU prefix)
+					|--------------------------------------------------------------------------
+					*/
+
+					const saveSupplierButton =
+						event.target.closest(
+							'.pdxw-save-supplier-rule'
+						);
+
+					if ( saveSupplierButton ) {
+
+						const row =
+							saveSupplierButton.closest(
+								'tr'
+							);
+
+						const prefix =
+							row.dataset.prefix;
+
+						const discount =
+							validateDiscount(
+								row
+									.querySelector(
+										'.pdxw-rule-discount'
+									)
+									.value
+							);
+
+						if ( null === discount ) {
+							showNotice(
+								<?php echo wp_json_encode( __( 'Please enter a discount between 0 and 100.', 'promi-data-x-woo' ) ); ?>,
+								'error'
+							);
+
+							return;
+						}
+
+						apiFetch(
+							'/pricing/supplier-discounts',
+							'POST',
+							{
+								sku_prefix:
+									prefix,
+
+								discount_percent:
+									discount,
+							}
+						)
+						.then(
+							function () {
+
+								showNotice(
+									<?php echo wp_json_encode( __( 'Supplier discount saved. Catalog prices are being updated.', 'promi-data-x-woo' ) ); ?>,
+									'success'
+								);
+							}
+						)
+						.catch(
+							function ( error ) {
+
+								showNotice(
+									error.message
+									|| <?php echo wp_json_encode( __( 'Error saving supplier discount.', 'promi-data-x-woo' ) ); ?>,
+									'error'
+								);
+							}
+						);
+
+						return;
+					}
+
+
+					const deleteSupplierButton =
+						event.target.closest(
+							'.pdxw-delete-supplier-rule'
+						);
+
+					if ( deleteSupplierButton ) {
+
+						const row =
+							deleteSupplierButton.closest(
+								'tr'
+							);
+
+						const prefix =
+							row.dataset.prefix;
+
+						if (
+							! window.confirm(
+								<?php echo wp_json_encode( __( 'Remove the supplier discount for SKU prefix', 'promi-data-x-woo' ) ); ?>
+								+ ' "'
+								+ prefix
+								+ '"?'
+							)
+						) {
+							return;
+						}
+
+						apiFetch(
+							'/pricing/supplier-discounts',
+							'DELETE',
+							{
+								sku_prefix:
+									prefix,
+							}
+						)
+						.then(
+							function () {
+
+								const tbody =
+									row.closest(
+										'tbody'
+									);
+
+								row.remove();
+
+								if (
+									! tbody.querySelector(
+										'tr'
+									)
+								) {
+									tbody.innerHTML =
+										'<tr class="pdxw-empty-row">'
+										+ '<td colspan="3">'
+										+ escapeHtml(
+											<?php echo wp_json_encode( __( 'No supplier discounts configured.', 'promi-data-x-woo' ) ); ?>
+										)
+										+ '</td></tr>';
+								}
+
+								showNotice(
+									<?php echo wp_json_encode( __( 'Supplier discount removed. Catalog prices are being updated.', 'promi-data-x-woo' ) ); ?>,
+									'success'
+								);
+							}
+						)
+						.catch(
+							function ( error ) {
+
+								showNotice(
+									error.message
+									|| <?php echo wp_json_encode( __( 'Error removing supplier discount.', 'promi-data-x-woo' ) ); ?>,
 									'error'
 								);
 							}

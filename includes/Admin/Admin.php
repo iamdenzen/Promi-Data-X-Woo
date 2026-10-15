@@ -76,6 +76,8 @@ final class Admin {
 
 	private SuppliersPage $suppliers_page;
 
+	private UnmarkedProductsPage $unmarked_products_page;
+
 	private SuppliersAjax $suppliers_ajax;
 
 
@@ -238,6 +240,21 @@ final class Admin {
 
 		/*
 		|--------------------------------------------------------------------------
+		| Unmarked Products Report
+		|--------------------------------------------------------------------------
+		|
+		| Read-only list of products sold at exactly the Promi price (no
+		| markup, no discount). Data is produced by Pricing\PriceSync.
+		*/
+
+		$this->unmarked_products_page =
+			new UnmarkedProductsPage(
+				$this->pricing
+			);
+
+
+		/*
+		|--------------------------------------------------------------------------
 		| Admin Navigation
 		|--------------------------------------------------------------------------
 		|
@@ -258,7 +275,8 @@ final class Admin {
 				$this->printing_page,
 				$this->markup_page,
 				$this->inquiries_page,
-				$this->suppliers_page
+				$this->suppliers_page,
+				$this->unmarked_products_page
 			);
 
 
@@ -428,6 +446,8 @@ final class Admin {
 
 		$this->suppliers_page->init();
 
+		$this->unmarked_products_page->init();
+
 
 		do_action(
 			'pdxw_admin_init',
@@ -494,6 +514,11 @@ final class Admin {
 
 	public function suppliers_page(): SuppliersPage {
 		return $this->suppliers_page;
+	}
+
+
+	public function unmarked_products_page(): UnmarkedProductsPage {
+		return $this->unmarked_products_page;
 	}
 
 

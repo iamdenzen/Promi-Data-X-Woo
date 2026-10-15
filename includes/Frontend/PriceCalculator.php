@@ -438,7 +438,7 @@ final class PriceCalculator {
 		| Print Option Price
 		|--------------------------------------------------------------------------
 		|
-		| calculate_selection() already applies the same finishing markup
+		| calculate_selection() already applies the same print price / fee markup
 		| and setup/ongoing rounding rules as the product-page configurator
 		| and the cart, so this stays correct as those rules change.
 		*/

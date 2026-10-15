@@ -61,11 +61,15 @@ final class Pricing {
 
 	private ManufacturerDiscount $manufacturer_discount;
 
+	private SupplierDiscount $supplier_discount;
+
 	private SellingPriceCalculator $selling_prices;
 
 	private CostCalculator $costs;
 
 	private TieredPricing $tiers;
+
+	private PriceSync $price_sync;
 
 	private CartPricing $cart;
 
@@ -158,6 +162,19 @@ final class Pricing {
 
 		/*
 		|--------------------------------------------------------------------------
+		| Supplier Discount
+		|--------------------------------------------------------------------------
+		|
+		| SKU-prefix based discount. Applied only when the product's brand has
+		| no manufacturer discount (priority: manufacturer, then supplier).
+		*/
+
+		$this->supplier_discount =
+			new SupplierDiscount();
+
+
+		/*
+		|--------------------------------------------------------------------------
 		| Selling Price Mathematics
 		|--------------------------------------------------------------------------
 		|
@@ -194,6 +211,7 @@ final class Pricing {
 				$this->repository,
 				$this->markup_rules,
 				$this->manufacturer_discount,
+				$this->supplier_discount,
 				$this->selling_prices
 			);
 
@@ -209,6 +227,23 @@ final class Pricing {
 		$this->tiers =
 			new TieredPricing(
 				$this->repository,
+				$this->costs
+			);
+
+
+		/*
+		|--------------------------------------------------------------------------
+		| Catalog Price Sync
+		|--------------------------------------------------------------------------
+		|
+		| Re-calculates the stored WooCommerce catalog price whenever a markup
+		| or discount rule changes.
+		*/
+
+		$this->price_sync =
+			new PriceSync(
+				$this->repository,
+				$this->tiers,
 				$this->costs
 			);
 
@@ -299,6 +334,15 @@ final class Pricing {
 		*/
 
 		$this->cart->init();
+
+
+		/*
+		|--------------------------------------------------------------------------
+		| Catalog Price Sync
+		|--------------------------------------------------------------------------
+		*/
+
+		$this->price_sync->init();
 
 
 		/*
@@ -614,6 +658,24 @@ final class Pricing {
 	public function manufacturer_discount(): ManufacturerDiscount {
 
 		return $this->manufacturer_discount;
+	}
+
+
+	/**
+	 * Return catalog price sync service.
+	 */
+	public function price_sync(): PriceSync {
+
+		return $this->price_sync;
+	}
+
+
+	/**
+	 * Return supplier discount service.
+	 */
+	public function supplier_discount(): SupplierDiscount {
+
+		return $this->supplier_discount;
 	}
 
 

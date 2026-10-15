@@ -15,13 +15,15 @@ defined( 'ABSPATH' ) || exit;
  *         ↓
  *     default article markup
  *
- * Printing / decoration:
+ * Printing / decoration (price and fee are configured separately):
  *
  *     print option
  *         ↓
- *     print-option markup
+ *     print-option price / fee markup
  *         ↓
- *     default finishing markup
+ *     default print price / fee markup
+ *
+ * Every default is 0% when unset: no markup is applied until configured.
  *
  * Manufacturer discounts are intentionally NOT handled here.
  *
@@ -35,21 +37,17 @@ final class MarkupRules {
 
 	/**
 	 * Default article/category markup.
+	 *
+	 * 0 = no markup is applied unless configured.
 	 */
 	public const DEFAULT_ARTICLE_MARKUP =
-		25.0;
-
-	/**
-	 * Default finishing/print-option markup.
-	 */
-	public const DEFAULT_FINISHING_MARKUP =
-		25.0;
+		0.0;
 
 	public const DEFAULT_PRINT_PRICE_MARKUP =
-		25.0;
+		0.0;
 
 	public const DEFAULT_PRINT_FEE_MARKUP =
-		25.0;
+		0.0;
 
 	/**
 	 * Manufacturer discount term-meta key.
@@ -92,7 +90,7 @@ final class MarkupRules {
 	 *
 	 * Default:
 	 *
-	 *     25%
+	 *     0% (no markup)
 	 */
 	public function article_default(): float {
 
@@ -105,24 +103,6 @@ final class MarkupRules {
 		);
 	}
 
-
-	/**
-	 * Get the default finishing/print-option markup.
-	 *
-	 * Default:
-	 *
-	 *     25%
-	 */
-	public function finishing_default(): float {
-
-		return max(
-			0.0,
-			(float) get_option(
-				'pdxw_default_finishing_markup',
-				self::DEFAULT_FINISHING_MARKUP
-			)
-		);
-	}
 
 	/**
 	 * Default print option price markup.
@@ -170,23 +150,6 @@ final class MarkupRules {
 		);
 	}
 
-
-	/**
-	 * Set the default finishing/print-option markup.
-	 */
-	public function set_finishing_default(
-		float $markup
-	): void {
-
-		update_option(
-			'pdxw_default_finishing_markup',
-			max(
-				0.0,
-				$markup
-			),
-			false
-		);
-	}
 
 	public function set_print_price_default(
 		float $markup
@@ -386,6 +349,15 @@ final class MarkupRules {
 				 *
 				 *     child category = greater depth
 				 *     parent category = lower depth
+				 *
+				 * KNOWN LIMITATION: $actual_depth below is derived from the
+				 * length of THIS chain, not from the term's absolute depth in
+				 * the category tree. Inside one chain the ordering is correct,
+				 * but when a product is assigned to several categories on
+				 * branches of different depth, the values of different chains
+				 * are not comparable (a rule on a shallow category in a short
+				 * chain can outrank a rule on a deeper category in a longer
+				 * chain). Intentionally left as is for now.
 				 */
 				$actual_depth =
 					count( $chain )
@@ -419,26 +391,6 @@ final class MarkupRules {
 	| Finishing / Print Option Markup
 	|--------------------------------------------------------------------------
 	*/
-
-	/**
-	 * Return the applicable finishing/decoration markup.
-	 *
-	 * The client's terminology may refer to this as a "finishing type",
-	 * but in our implementation the existing print-option entity is used.
-	 *
-	 * There is intentionally no separate finishing-type taxonomy.
-	 *
-	 * If no specific print-option rule exists, the default finishing markup
-	 * is returned.
-	 */
-	public function finishing_markup(
-		int $print_option_id
-	): float {
-
-		return $this->print_price_markup(
-			$print_option_id
-		);
-	}
 
 	/**
 	 * Return the print-price markup for a single print option.

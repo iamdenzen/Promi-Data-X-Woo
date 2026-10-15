@@ -309,6 +309,117 @@ final class RestController {
 					],
 			]
 		);
+
+
+		/*
+		|--------------------------------------------------------------------------
+		| Supplier Discounts (SKU prefix)
+		|--------------------------------------------------------------------------
+		|
+		| The prefix is sent in the request (not the URL) because it is free
+		| text such as "A86-".
+		*/
+
+		register_rest_route(
+			'pdxw/v1',
+			'/pricing/supplier-discounts',
+			[
+				[
+					'methods' =>
+						\WP_REST_Server::READABLE,
+
+					'permission_callback' =>
+						[
+							$this,
+							'permission',
+						],
+
+					'callback' =>
+						[
+							$this,
+							'get_supplier_discounts',
+						],
+				],
+				[
+					'methods' =>
+						\WP_REST_Server::CREATABLE,
+
+					'permission_callback' =>
+						[
+							$this,
+							'permission',
+						],
+
+					'callback' =>
+						[
+							$this,
+							'save_supplier_discount',
+						],
+				],
+				[
+					'methods' =>
+						\WP_REST_Server::DELETABLE,
+
+					'permission_callback' =>
+						[
+							$this,
+							'permission',
+						],
+
+					'callback' =>
+						[
+							$this,
+							'delete_supplier_discount',
+						],
+				],
+			]
+		);
+
+
+		/*
+		|--------------------------------------------------------------------------
+		| Catalog price recalculation
+		|--------------------------------------------------------------------------
+		*/
+
+		register_rest_route(
+			'pdxw/v1',
+			'/pricing/reprice',
+			[
+				[
+					'methods' =>
+						\WP_REST_Server::READABLE,
+
+					'permission_callback' =>
+						[
+							$this,
+							'permission',
+						],
+
+					'callback' =>
+						[
+							$this,
+							'get_reprice_status',
+						],
+				],
+				[
+					'methods' =>
+						\WP_REST_Server::CREATABLE,
+
+					'permission_callback' =>
+						[
+							$this,
+							'permission',
+						],
+
+					'callback' =>
+						[
+							$this,
+							'reprice_all',
+						],
+				],
+			]
+		);
 	}
 
 
@@ -411,11 +522,6 @@ final class RestController {
 						->markup_rules()
 						->article_default(),
 
-				'finishing_markup' =>
-					$this->pricing
-						->markup_rules()
-						->finishing_default(),
-
 				'print_price_markup' =>
 					$this->pricing
 						->markup_rules()
@@ -458,48 +564,29 @@ final class RestController {
 				return $article_markup;
 			}
 
+			$previous_article_markup =
+				$this->pricing
+					->markup_rules()
+					->article_default();
+
 			$this->pricing
 				->markup_rules()
 				->set_article_default(
 					$article_markup
 				);
-		}
 
-
-		if ( array_key_exists( 'finishing_markup', $data ) ) {
-
-			$finishing_markup =
-				$this->markup(
-					$request,
-					'finishing_markup'
-				);
-
+			// Every product without a category rule follows the default.
 			if (
-				is_wp_error(
-					$finishing_markup
-				)
+				abs( $previous_article_markup - $article_markup )
+				> 0.00001
 			) {
-				return $finishing_markup;
+
+				$this->pricing
+					->price_sync()
+					->reprice_all();
 			}
-
-			$this->pricing
-				->markup_rules()
-				->set_finishing_default(
-					$finishing_markup
-				);
-
-			$this->pricing
-				->markup_rules()
-				->set_print_price_default(
-					$finishing_markup
-				);
-
-			$this->pricing
-				->markup_rules()
-				->set_print_fee_default(
-					$finishing_markup
-				);
 		}
+
 
 		if ( array_key_exists( 'print_price_markup', $data ) ) {
 
@@ -635,6 +722,12 @@ final class RestController {
 		}
 
 
+		$this->pricing
+			->price_sync()
+			->reprice_category(
+				$id
+			);
+
 		return new \WP_REST_Response(
 			[
 				'id' =>
@@ -696,6 +789,12 @@ final class RestController {
 				]
 			);
 		}
+
+		$this->pricing
+			->price_sync()
+			->reprice_category(
+				$id
+			);
 
 
 		return new \WP_REST_Response(
@@ -1014,6 +1113,12 @@ final class RestController {
 			);
 		}
 
+		$this->pricing
+			->price_sync()
+			->reprice_brand(
+				$id
+			);
+
 		return new \WP_REST_Response(
 			[
 				'id'               => $id,
@@ -1059,10 +1164,194 @@ final class RestController {
 			);
 		}
 
+		$this->pricing
+			->price_sync()
+			->reprice_brand(
+				$id
+			);
+
 		return new \WP_REST_Response(
 			[
 				'id'      => $id,
 				'deleted' => true,
+			]
+		);
+	}
+
+
+	/*
+	|--------------------------------------------------------------------------
+	| Supplier Discounts
+	|--------------------------------------------------------------------------
+	*/
+
+	public function get_supplier_discounts(): \WP_REST_Response {
+
+		return new \WP_REST_Response(
+			$this->pricing
+				->supplier_discount()
+				->all()
+		);
+	}
+
+
+	public function save_supplier_discount(
+		\WP_REST_Request $request
+	) {
+
+		$supplier_discount =
+			$this->pricing
+				->supplier_discount();
+
+		$sku_prefix =
+			$supplier_discount
+				->normalize_prefix(
+					(string) $request->get_param(
+						'sku_prefix'
+					)
+				);
+
+		if ( '' === $sku_prefix ) {
+			return new \WP_Error(
+				'pdxw_invalid_sku_prefix',
+				'sku_prefix must not be empty.',
+				[
+					'status' => 400,
+				]
+			);
+		}
+
+		$discount =
+			$this->discount_percent(
+				$request
+			);
+
+		if (
+			is_wp_error( $discount )
+		) {
+			return $discount;
+		}
+
+		if (
+			! $supplier_discount
+				->save(
+					$sku_prefix,
+					$discount
+				)
+		) {
+			return new \WP_Error(
+				'pdxw_supplier_discount_save_failed',
+				'Could not save supplier discount.',
+				[
+					'status' => 500,
+				]
+			);
+		}
+
+		$this->pricing
+			->price_sync()
+			->reprice_sku_prefix(
+				$sku_prefix
+			);
+
+		return new \WP_REST_Response(
+			[
+				'sku_prefix'       => $sku_prefix,
+				'discount_percent' => $discount,
+			]
+		);
+	}
+
+
+	public function delete_supplier_discount(
+		\WP_REST_Request $request
+	) {
+
+		$supplier_discount =
+			$this->pricing
+				->supplier_discount();
+
+		$sku_prefix =
+			$supplier_discount
+				->normalize_prefix(
+					(string) $request->get_param(
+						'sku_prefix'
+					)
+				);
+
+		if ( '' === $sku_prefix ) {
+			return new \WP_Error(
+				'pdxw_invalid_sku_prefix',
+				'sku_prefix must not be empty.',
+				[
+					'status' => 400,
+				]
+			);
+		}
+
+		if (
+			! $supplier_discount
+				->delete(
+					$sku_prefix
+				)
+		) {
+			return new \WP_Error(
+				'pdxw_supplier_discount_delete_failed',
+				'Could not delete supplier discount.',
+				[
+					'status' => 500,
+				]
+			);
+		}
+
+		$this->pricing
+			->price_sync()
+			->reprice_sku_prefix(
+				$sku_prefix
+			);
+
+		return new \WP_REST_Response(
+			[
+				'sku_prefix' => $sku_prefix,
+				'deleted'    => true,
+			]
+		);
+	}
+
+
+	/*
+	|--------------------------------------------------------------------------
+	| Catalog price recalculation
+	|--------------------------------------------------------------------------
+	*/
+
+	public function get_reprice_status(): \WP_REST_Response {
+
+		return new \WP_REST_Response(
+			[
+				'pending_jobs' =>
+					$this->pricing
+						->price_sync()
+						->pending_jobs(),
+			]
+		);
+	}
+
+
+	public function reprice_all(): \WP_REST_Response {
+
+		$products =
+			$this->pricing
+				->price_sync()
+				->reprice_all();
+
+		return new \WP_REST_Response(
+			[
+				'products'     => $products,
+				'pending_jobs' =>
+					$this->pricing
+						->price_sync()
+						->pending_jobs(),
 			]
 		);
 	}

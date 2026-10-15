@@ -263,7 +263,7 @@ final class CartPricing {
 		| Calculator is now the only class responsible for:
 		|
 		| - print purchase costs,
-		| - finishing markup,
+		| - print price / fee markup,
 		| - setup rounding,
 		| - ongoing/no-rounding rules.
 		|

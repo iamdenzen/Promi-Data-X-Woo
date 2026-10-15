@@ -7,7 +7,7 @@ use PromiDataXWoo\Core\Database;
 defined( 'ABSPATH' ) || exit;
 
 /**
- * Storage layer for article / finishing markup rules.
+ * Storage layer for article / print-option markup rules.
  *
  * SQL lives here.
  *

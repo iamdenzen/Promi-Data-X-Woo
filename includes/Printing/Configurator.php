@@ -578,7 +578,7 @@ final class Configurator {
 			}
 
 			/*
-			 * Preview through the same cost-basis + finishing markup
+			 * Preview through the same cost-basis + print price / fee markup
 			 * rules used by the cart, so the product page shows the
 			 * actual customer-facing amount rather than Promi's raw
 			 * selling-side figure.

@@ -372,6 +372,66 @@ final class PriceRepository {
 
 
 	/**
+	 * Return every variation_id (0 = product-level tiers) that has tier rows
+	 * for a product.
+	 */
+	public function get_variation_ids(
+		int $product_id
+	): array {
+
+		$product_id = absint( $product_id );
+
+		if ( ! $product_id ) {
+			return [];
+		}
+
+		$db = $this->db();
+
+		return array_map(
+			'intval',
+			$db->get_col(
+				$db->prepare(
+					'SELECT DISTINCT variation_id
+					FROM ' . $this->table() . '
+					WHERE product_id = %d
+					ORDER BY variation_id ASC',
+					$product_id
+				)
+			)
+		);
+	}
+
+
+	/**
+	 * Return a page of product IDs which have tier rows, ordered by ID.
+	 *
+	 * Used to walk the whole catalog in chunks.
+	 */
+	public function get_product_ids(
+		int $after_id = 0,
+		int $limit = 500
+	): array {
+
+		$db = $this->db();
+
+		return array_map(
+			'intval',
+			$db->get_col(
+				$db->prepare(
+					'SELECT DISTINCT product_id
+					FROM ' . $this->table() . '
+					WHERE product_id > %d
+					ORDER BY product_id ASC
+					LIMIT %d',
+					absint( $after_id ),
+					max( 1, absint( $limit ) )
+				)
+			)
+		);
+	}
+
+
+	/**
 	 * Return exact quantities for one target.
 	 *
 	 * Unlike get_quantities(), this method always requires an exact

@@ -62,6 +62,9 @@ final class Menu {
 	public const MARKUP_SLUG =
 		'pdxw-pricing-markups';
 
+	public const UNMARKED_SLUG =
+		'pdxw-unmarked-products';
+
 	public const INQUIRIES_SLUG =
 		'pdxw-inquiries';
 
@@ -104,6 +107,8 @@ final class Menu {
 
 	private SuppliersPage $suppliers_page;
 
+	private UnmarkedProductsPage $unmarked_products_page;
+
 	private bool $initialized = false;
 
 	/**
@@ -123,7 +128,8 @@ final class Menu {
 		PrintingPage $printing_page,
 		MarkupPage $markup_page,
 		InquiriesPage $inquiries_page,
-		SuppliersPage $suppliers_page
+		SuppliersPage $suppliers_page,
+		UnmarkedProductsPage $unmarked_products_page
 	) {
 		$this->promi_pages             = $promi_pages;
 		$this->pricing_page            = $pricing_page;
@@ -132,6 +138,7 @@ final class Menu {
 		$this->markup_page             = $markup_page;
 		$this->inquiries_page          = $inquiries_page;
 		$this->suppliers_page          = $suppliers_page;
+		$this->unmarked_products_page  = $unmarked_products_page;
 	}
 
 
@@ -471,6 +478,35 @@ final class Menu {
 
 		/*
 		|--------------------------------------------------------------------------
+		| Unmarked Products
+		|--------------------------------------------------------------------------
+		*/
+
+		$this->page_hooks[
+			self::UNMARKED_SLUG
+		] =
+			(string)
+			add_submenu_page(
+				self::ROOT_SLUG,
+				__(
+					'Unmarked Products',
+					'promi-data-x-woo'
+				),
+				__(
+					'Unmarked Products',
+					'promi-data-x-woo'
+				),
+				self::CAPABILITY,
+				self::UNMARKED_SLUG,
+				[
+					$this->unmarked_products_page,
+					'render',
+				]
+			);
+
+
+		/*
+		|--------------------------------------------------------------------------
 		| Inquiries
 		|--------------------------------------------------------------------------
 		*/
@@ -615,6 +651,7 @@ final class Menu {
 			self::PRICING_CALCULATOR_SLUG,
 			self::PRINTING_SLUG,
 			self::MARKUP_SLUG,
+			self::UNMARKED_SLUG,
 			self::INQUIRIES_SLUG,
 			self::SUPPLIERS_SLUG,
 		];

@@ -14,40 +14,42 @@ defined( 'ABSPATH' ) || exit;
  *
  * - Resolve selected print options.
  * - Resolve applicable purchase print tiers.
- * - Apply finishing / decoration markup.
+ * - Apply the print price markup to print unit prices.
  * - Calculate purchase-side fees.
- * - Apply finishing markup to fees.
- * - Round setup fees to the nearest whole euro.
+ * - Apply the print fee markup to fees.
+ * - Round setup fees to a price ending in 9 (see SellingPriceCalculator::round_setup()).
  * - Round ongoing printing / decoration unit prices and fees once, to cents.
  * - Produce the final selling-side printing amount used by the Pricing Engine.
  *
  * Important:
  *
- * Promi's raw selling price is NOT used as the storefront selling price.
- *
- * The new calculation is cost-based:
+ * The calculation is cost-based:
  *
  *     purchase print price
  *             ↓
- *     finishing markup
+ *     print price markup
  *             ↓
  *     customer print price
+ *
+ * Cost basis fallback: when a print option has no purchase price (or a fee
+ * has no purchase amount), Promi's selling-side price/amount is used as the
+ * cost basis instead, and the markup is still applied on top.
  *
  * Setup:
  *
  *     purchase setup cost
  *             ↓
- *     finishing markup
+ *     print fee markup
  *             ↓
- *     nearest whole euro
+ *     whole euro, then a price ending in 9
  *
  * Ongoing:
  *
  *     purchase ongoing cost
  *             ↓
- *     finishing markup
+ *     print fee markup
  *             ↓
- *     no rounding
+ *     rounded once to cents
  *
  * Cart/session data is not read directly.
  * CartPricing prepares the context and passes it here.
@@ -214,10 +216,9 @@ final class Calculator {
 	/**
 	 * Calculate total selling-side printing cost.
 	 *
-	 * This method now calculates customer prices from purchase costs plus
-	 * finishing markup.
-	 *
-	 * It does NOT use Promi's raw selling price.
+	 * This method calculates customer prices from purchase costs plus the
+	 * print price / print fee markup. Promi's selling-side price is only
+	 * used as the cost basis when no purchase price exists.
 	 */
 	public function calculate(
 		array $selections,
@@ -244,7 +245,7 @@ final class Calculator {
 	/**
 	 * Calculate total purchase-side printing cost.
 	 *
-	 * This is the raw cost side and does not apply finishing markup.
+	 * This is the raw cost side and does not apply any markup.
 	 *
 	 * It is useful for profitability calculations and order reporting.
 	 */
@@ -561,7 +562,7 @@ final class Calculator {
 	 *
 	 *     purchase price
 	 *         ×
-	 *     finishing markup
+	 *     print price markup
 	 *         =
 	 *     ongoing print selling price
 	 *
@@ -570,16 +571,16 @@ final class Calculator {
 	 *     setup:
 	 *         purchase fee
 	 *         ×
-	 *         finishing markup
+	 *         print fee markup
 	 *         →
-	 *         nearest euro
+	 *         whole euro, then a price ending in 9
 	 *
 	 *     ongoing:
 	 *         purchase fee
 	 *         ×
-	 *         finishing markup
+	 *         print fee markup
 	 *         →
-	 *         no rounding
+	 *         rounded once to cents
 	 */
 	public function calculate_breakdown(
 		array $selections,
@@ -708,7 +709,7 @@ final class Calculator {
 
 			/*
 			|--------------------------------------------------------------------------
-			| Finishing Markup
+			| Print Markups (price + fee)
 			|--------------------------------------------------------------------------
 			*/
 
@@ -742,10 +743,14 @@ final class Calculator {
 
 
 			/*
-			 * Do NOT fall back to the Promi selling price.
+			 * Cost basis fallback chain, resolved by
+			 * Repository::get_applicable_purchase_price():
 			 *
-			 * If there is no purchase print price, there is no cost basis
-			 * from which we can calculate our customer print price.
+			 *     purchase_price  →  Promi selling price
+			 *
+			 * The print price markup is applied on top of whichever one is
+			 * found. Only when neither exists (or the value is <= 0) is no
+			 * print price charged.
 			 */
 			if (
 				null !== $purchase_price
@@ -764,7 +769,7 @@ final class Calculator {
 				 *
 				 *     purchase cost
 				 *         ×
-				 *     finishing markup
+				 *     print price markup
 				 *
 				 * Rounded once to cents (SellingPriceCalculator::ongoing()).
 				 */
@@ -869,7 +874,8 @@ final class Calculator {
 				| Setup Fee
 				|--------------------------------------------------------------------------
 				|
-				| Apply finishing markup, then round to nearest whole euro.
+				| Apply the print fee markup, then round up to a whole
+				| euro and on to a price ending in 9.
 				*/
 
 				if (
@@ -899,9 +905,9 @@ final class Calculator {
 					|--------------------------------------------------------------------------
 					| Ongoing / other fee
 					|
-					| Apply finishing markup.
+					| Apply the print fee markup.
 					|
-					| No rounding.
+					| Rounded once to cents.
 					*/
 
 					$selling_fee =
@@ -1282,7 +1288,7 @@ final class Calculator {
 	/**
 	 * Preview the customer-facing selling amount for a single print fee.
 	 *
-	 * Applies the same cost-basis → finishing markup → rounding rules as
+	 * Applies the same cost-basis → print fee markup → rounding rules as
 	 * calculate_breakdown() / calculate_selection(), for a single fee row
 	 * supplied directly by the caller.
 	 *

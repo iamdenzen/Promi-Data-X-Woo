@@ -15,11 +15,13 @@ defined( 'ABSPATH' ) || exit;
  *
  * Printing / decoration:
  *
- *     cost × (1 + finishing markup / 100)  → rounded ONCE to cents
+ *     cost × (1 + print price markup / 100)  → rounded ONCE to cents
  *
  * Setup:
  *
- *     marked-up amount (unrounded) → nearest whole euro
+ *     marked-up amount (unrounded) → whole euro (ceil)
+ *                                  → price ending in 9 (e.g. 57.902 → 58 → 59,
+ *                                    see round_setup())
  *
  * Ongoing printing / decoration:
  *
@@ -113,15 +115,17 @@ final class SellingPriceCalculator {
 	 *
 	 *     raw setup cost
 	 *         ↓
-	 *     finishing markup
+	 *     print fee markup
 	 *         ↓
-	 *     nearest whole euro
+	 *     round up to a whole euro
+	 *         ↓
+	 *     map to the price ending in 9 (see round_setup())
 	 *
 	 * Example:
 	 *
 	 *     €44.54 × 1.30 = €57.902
 	 *
-	 *     result = €58
+	 *     €57.902 → €58 → result = €59
 	 */
 	public function setup(
 		float $cost,
@@ -151,8 +155,9 @@ final class SellingPriceCalculator {
 	/**
 	 * Calculate an ongoing print / decoration amount.
 	 *
-	 * Ongoing printing follows the finishing markup rule and is rounded once
-	 * to cents (never to whole euros — that is for setup only).
+	 * Ongoing printing follows the print price / print fee markup and is
+	 * rounded once to cents (never to a whole euro / "9" ending — that is for
+	 * setup only).
 	 *
 	 * Example:
 	 *
@@ -176,7 +181,7 @@ final class SellingPriceCalculator {
 	 * Calculate a marked-up amount, rounded once to cents.
 	 *
 	 * This is useful for any decoration/printing amount which is subject to
-	 * finishing markup but is not a setup fee.
+	 * print markup but is not a setup fee.
 	 */
 	public function marked_up(
 		float $cost,
@@ -255,17 +260,25 @@ final class SellingPriceCalculator {
 	*/
 
 	/**
-	 * Round a setup amount to the nearest whole euro.
+	 * Round a setup amount to a price ending in 9.
+	 *
+	 * The amount is first rounded up to a whole euro (ceil). That whole euro
+	 * n is then mapped to the 9-ending price of its decade:
+	 *
+	 *     n = 10k + 1 ... 10k + 10   →   10k + 9
 	 *
 	 * Examples:
 	 *
-	 *     55.23 → 55
-	 *     55.49 → 55
-	 *     55.50 → 56
-	 *     55.67 → 56
+	 *     55.23 → 56 → 59
+	 *     57.902 → 58 → 59
+	 *     59.00 → 59
+	 *     60.00 → 60 → 59   (a whole euro ending in 0 goes DOWN by 1)
+	 *     59.10 → 60 → 59
+	 *     60.50 → 61 → 69
 	 *
-	 * PHP's default round() behavior is used because the business
-	 * requirement is ordinary nearest-euro rounding.
+	 * This is the intended business rule (price endings of 9), not ordinary
+	 * rounding to the nearest euro. Note the one case where the result is
+	 * below the marked-up amount: amounts that round up to a multiple of 10.
 	 */
 	public function round_setup(
 		float $amount
