@@ -97,6 +97,30 @@ final class ProductSync {
 			$parent_sku
 		);
 
+		/**
+		 * A "create" for a SKU which already exists in WooCommerce is
+		 * treated as an update, so live descriptions are not overwritten
+		 * and the product is not re-drafted.
+		 */
+		$already_exists = (bool) wc_get_product_id_by_sku(
+			$parent_sku
+		);
+
+		if (
+			Queue::ACTION_CREATE === $action
+			&& $already_exists
+		) {
+
+			$this->logger->info(
+				'Promi create requested for an existing product; treating as update.',
+				[
+					'sku' => $parent_sku,
+				]
+			);
+
+			$action = Queue::ACTION_UPDATE;
+		}
+
 		$product = $this->get_or_create_product(
 			$parent_sku
 		);
@@ -823,17 +847,80 @@ final class ProductSync {
 
 
 		/**
-		 * We deliberately do NOT delete missing Woo variations here yet.
-		 *
-		 * Promi feeds occasionally contain partial/inconsistent child data.
-		 * Variation removal should have its own safety policy rather than
-		 * assuming absence from one response means permanent deletion.
+		 * Variations no longer present in Promi are hidden (private), not
+		 * deleted. Promi feeds occasionally contain partial child data, so
+		 * the variation (and order history) is kept and is restored
+		 * automatically by sync_variation() if it returns to the feed.
 		 */
+		if ( ! empty( $seen_variation_ids ) ) {
+			$this->disable_missing_variations(
+				$parent_id,
+				$seen_variation_ids
+			);
+		}
+
 		do_action(
 			'pdxw_promi_variations_synced',
 			$parent_id,
 			$seen_variation_ids
 		);
+	}
+
+
+	/**
+	 * Hide variations of a parent which are no longer in the Promi feed.
+	 *
+	 * @param int[] $seen_variation_ids Variation IDs present in the feed.
+	 */
+	private function disable_missing_variations(
+		int $parent_id,
+		array $seen_variation_ids
+	): void {
+
+		$existing_ids = get_posts(
+			[
+				'post_type'      => 'product_variation',
+				'post_parent'    => $parent_id,
+				'post_status'    => 'publish',
+				'fields'         => 'ids',
+				'posts_per_page' => -1,
+				'no_found_rows'  => true,
+			]
+		);
+
+		$missing = array_diff(
+			array_map( 'absint', $existing_ids ),
+			array_map( 'absint', $seen_variation_ids )
+		);
+
+		foreach ( $missing as $variation_id ) {
+
+			$variation = wc_get_product( $variation_id );
+
+			if ( ! $variation instanceof WC_Product_Variation ) {
+				continue;
+			}
+
+			$variation->set_status( 'private' );
+
+			$variation->update_meta_data(
+				'cx_promi_variation_missing',
+				1
+			);
+
+			$variation->save();
+		}
+
+		if ( $missing ) {
+
+			$this->logger->info(
+				'Disabled Promi variations missing from the feed.',
+				[
+					'product_id' => $parent_id,
+					'count'      => count( $missing ),
+				]
+			);
+		}
 	}
 
 
@@ -845,6 +932,10 @@ final class ProductSync {
 
 		$variation->set_status(
 			'publish'
+		);
+
+		$variation->delete_meta_data(
+			'cx_promi_variation_missing'
 		);
 
 		$details = $child['ProductDetails']['de']
