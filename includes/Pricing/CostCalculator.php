@@ -262,6 +262,87 @@ final class CostCalculator {
 
 		/*
 		|--------------------------------------------------------------------------
+		| Never expose the purchase price
+		|--------------------------------------------------------------------------
+		|
+		| With no markup the customer would pay the raw GeneralBuyingPrice.
+		| Sell at Promi's RecommendedSellingPrice instead; if there is none,
+		| the price is on request.
+		|--------------------------------------------------------------------------
+		*/
+
+		if (
+			'purchase_price' === $cost_result['source']
+			&& $article_markup <= 0
+		) {
+
+			$selling_price =
+				$this->nullable_price(
+					$cost_result['tier']->price
+						?? null
+				);
+
+			if ( null === $selling_price ) {
+
+				return [
+					'status' =>
+						self::STATUS_PRICE_ON_REQUEST,
+
+					'cost' =>
+						null,
+
+					'article_markup' =>
+						(float) $article_markup,
+
+					'article_price' =>
+						null,
+
+					'source' =>
+						null,
+
+					'manufacturer_discount' =>
+						0.0,
+
+					'discount_source' =>
+						'none',
+
+					'tier' =>
+						$cost_result['tier'],
+				];
+			}
+
+			return [
+				'status' =>
+					self::STATUS_PRICED,
+
+				'cost' =>
+					(float) $cost_result['cost'],
+
+				'article_markup' =>
+					(float) $article_markup,
+
+				'article_price' =>
+					SellingPriceCalculator::round_money(
+						$selling_price
+					),
+
+				'source' =>
+					$cost_result['source'],
+
+				'manufacturer_discount' =>
+					0.0,
+
+				'discount_source' =>
+					'none',
+
+				'tier' =>
+					$cost_result['tier'],
+			];
+		}
+
+
+		/*
+		|--------------------------------------------------------------------------
 		| Calculate article selling price
 		|--------------------------------------------------------------------------
 		|
