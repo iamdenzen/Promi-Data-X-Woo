@@ -966,6 +966,48 @@ final class Repository {
 	}
 
 
+	/**
+	 * Search options by name, SKU or supplier SKU (for ajax selects).
+	 *
+	 * Fetches one extra row so callers can tell whether another page exists.
+	 */
+	public function search_options(
+		string $term = '',
+		int $page = 1,
+		int $per_page = 30
+	): array {
+
+		$db = $this->db();
+
+		$term     = sanitize_text_field( $term );
+		$page     = max( 1, $page );
+		$per_page = max( 1, $per_page );
+
+		$sql  = 'SELECT id, name, sku FROM ' . $this->table( 'options' );
+		$args = [];
+
+		if ( '' !== $term ) {
+
+			$like = '%' . $db->esc_like( $term ) . '%';
+
+			$sql .= ' WHERE name LIKE %s
+				OR sku LIKE %s
+				OR supplier_sku LIKE %s';
+
+			array_push( $args, $like, $like, $like );
+		}
+
+		$sql .= ' ORDER BY name ASC, id ASC LIMIT %d OFFSET %d';
+
+		$args[] = $per_page + 1;
+		$args[] = ( $page - 1 ) * $per_page;
+
+		return $db->get_results(
+			$db->prepare( $sql, ...$args )
+		);
+	}
+
+
 	public function count_options(
 		string $sku_search = ''
 	): int {

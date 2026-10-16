@@ -405,6 +405,24 @@ final class Options {
 
 
 	/**
+	 * Search options by name / SKU / supplier SKU (ajax selects).
+	 */
+	public function search(
+		string $term = '',
+		int $page = 1,
+		int $per_page = 30
+	): array {
+
+		return $this->repository
+			->search_options(
+				$term,
+				$page,
+				$per_page
+			);
+	}
+
+
+	/**
 	 * Return distinct option names.
 	 *
 	 * Existing CX Print uses this for admin dropdowns.

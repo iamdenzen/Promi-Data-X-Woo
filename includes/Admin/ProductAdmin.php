@@ -75,6 +75,9 @@ final class ProductAdmin {
 	public const PRINT_OPTION_FILTER =
 		'pdxw_print_option';
 
+	public const PRINT_OPTION_SEARCH_ACTION =
+		'pdxw_search_print_options';
+
 
 	/*
 	|--------------------------------------------------------------------------
@@ -176,6 +179,22 @@ final class ProductAdmin {
 			],
 			20,
 			2
+		);
+
+		add_action(
+			'admin_enqueue_scripts',
+			[
+				$this,
+				'enqueue_print_option_filter_assets',
+			]
+		);
+
+		add_action(
+			'wp_ajax_' . self::PRINT_OPTION_SEARCH_ACTION,
+			[
+				$this,
+				'ajax_search_print_options',
+			]
 		);
 
 
@@ -628,14 +647,17 @@ final class ProductAdmin {
 			);
 
 
-		$options =
-			$this->printing
+		$selected_label = '';
+
+		if ( $selected > 0 ) {
+
+			$rows = $this->printing
 				->options()
-				->all();
+				->by_ids( [ $selected ] );
 
-
-		if ( empty( $options ) ) {
-			return;
+			if ( ! empty( $rows[0] ) ) {
+				$selected_label = $this->option_label( $rows[0] );
+			}
 		}
 		?>
 
@@ -652,94 +674,156 @@ final class ProductAdmin {
 		</label>
 
 
+		<?php
+		/*
+		 * Options number in the tens of thousands, so only the selected
+		 * option is rendered; the rest is loaded via ajax (selectWoo).
+		 */
+		?>
 		<select
 			id="pdxw-print-option-filter"
-			name="<?php echo esc_attr(
-				self::PRINT_OPTION_FILTER
-			); ?>"
+			class="pdxw-print-option-filter"
+			name="<?php echo esc_attr( self::PRINT_OPTION_FILTER ); ?>"
+			data-placeholder="<?php echo esc_attr__( 'All Print Options', 'promi-data-x-woo' ); ?>"
+			style="min-width:220px;"
 		>
+			<option value=""></option>
 
-			<option value="">
-				<?php
-				echo esc_html__(
-					'All Print Options',
-					'promi-data-x-woo'
-				);
-				?>
-			</option>
-
-
-			<?php foreach ( $options as $option ) : ?>
-
-				<?php
-				if (
-					! is_object(
-						$option
-					)
-					|| empty(
-						$option->id
-					)
-				) {
-					continue;
-				}
-
-
-				$name =
-					trim(
-						(string) (
-							$option->name
-							?? ''
-						)
-					);
-
-
-				$sku =
-					trim(
-						(string) (
-							$option->sku
-							?? ''
-						)
-					);
-
-
-				$label =
-					$name;
-
-
-				if (
-					'' !== $sku
-					&& $sku !== $name
-				) {
-
-					$label .=
-						' — '
-						. $sku;
-				}
-				?>
-
-				<option
-					value="<?php echo esc_attr(
-						(int) $option->id
-					); ?>"
-					<?php
-					selected(
-						$selected,
-						(int) $option->id
-					);
-					?>
-				>
-					<?php
-					echo esc_html(
-						$label
-					);
-					?>
+			<?php if ( $selected > 0 ) : ?>
+				<option value="<?php echo esc_attr( $selected ); ?>" selected="selected">
+					<?php echo esc_html( $selected_label ?: '#' . $selected ); ?>
 				</option>
-
-			<?php endforeach; ?>
+			<?php endif; ?>
 
 		</select>
 
 		<?php
+	}
+
+
+	private function option_label( object $option ): string {
+
+		$name = trim( (string) ( $option->name ?? '' ) );
+		$sku  = trim( (string) ( $option->sku ?? '' ) );
+
+		if ( '' !== $sku && $sku !== $name ) {
+			$name .= ' — ' . $sku;
+		}
+
+		return $name;
+	}
+
+
+	/**
+	 * Load selectWoo on the product list and wire the print option filter
+	 * to the ajax search endpoint.
+	 */
+	public function enqueue_print_option_filter_assets(
+		string $hook = ''
+	): void {
+
+		if ( 'edit.php' !== $hook ) {
+			return;
+		}
+
+		$screen = get_current_screen();
+
+		if ( ! $screen || 'edit-product' !== $screen->id ) {
+			return;
+		}
+
+		wp_enqueue_script( 'selectWoo' );
+		wp_enqueue_style( 'select2' );
+
+		$config = wp_json_encode(
+			[
+				'url'   => admin_url( 'admin-ajax.php' ),
+				'nonce' => wp_create_nonce( self::PRINT_OPTION_SEARCH_ACTION ),
+				'action' => self::PRINT_OPTION_SEARCH_ACTION,
+			]
+		);
+
+		wp_add_inline_script(
+			'selectWoo',
+			"jQuery(function($){
+				var cfg = {$config};
+				var \$el = $('#pdxw-print-option-filter');
+				if (!\$el.length || !\$.fn.selectWoo) { return; }
+				\$el.selectWoo({
+					allowClear: true,
+					minimumInputLength: 0,
+					placeholder: \$el.data('placeholder'),
+					ajax: {
+						url: cfg.url,
+						type: 'POST',
+						dataType: 'json',
+						delay: 250,
+						data: function(params){
+							return {
+								action: cfg.action,
+								nonce: cfg.nonce,
+								term: params.term || '',
+								page: params.page || 1
+							};
+						},
+						processResults: function(res, params){
+							var d = (res && res.data) || {};
+							params.page = params.page || 1;
+							return {
+								results: d.results || [],
+								pagination: { more: !!d.more }
+							};
+						}
+					}
+				});
+			});"
+		);
+	}
+
+
+	/**
+	 * Ajax: search print options for the product list filter.
+	 */
+	public function ajax_search_print_options(): void {
+
+		check_ajax_referer( self::PRINT_OPTION_SEARCH_ACTION, 'nonce' );
+
+		if ( ! current_user_can( 'edit_products' ) ) {
+			wp_send_json_error( [], 403 );
+		}
+
+		$term = isset( $_POST['term'] )
+			? sanitize_text_field( wp_unslash( $_POST['term'] ) )
+			: '';
+
+		$page = isset( $_POST['page'] )
+			? max( 1, absint( $_POST['page'] ) )
+			: 1;
+
+		$per_page = 30;
+
+		$rows = $this->printing
+			->options()
+			->search( $term, $page, $per_page );
+
+		$more = count( $rows ) > $per_page;
+
+		$results = [];
+
+		foreach ( array_slice( $rows, 0, $per_page ) as $row ) {
+
+			$results[] = [
+				'id'   => (int) $row->id,
+				'text' => $this->option_label( $row ),
+			];
+		}
+
+		wp_send_json_success(
+			[
+				'results' => $results,
+				'more'    => $more,
+			]
+		);
 	}
 
 
