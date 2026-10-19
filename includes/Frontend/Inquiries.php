@@ -89,6 +89,39 @@ final class Inquiries {
 		$quantity     = max( 0, absint( $data['quantity'] ?? 0 ) );
 
 
+		$source = 'cart' === ( $data['source'] ?? '' ) ? 'cart' : 'product';
+
+		$company = mb_substr(
+			sanitize_text_field( trim( (string) ( $data['company'] ?? '' ) ) ),
+			0,
+			255
+		);
+
+		$desired_date = null;
+		$raw_date     = trim( (string) ( $data['desired_date'] ?? '' ) );
+
+		if ( '' !== $raw_date ) {
+
+			$parsed = \DateTime::createFromFormat( '!Y-m-d', $raw_date );
+
+			if ( ! $parsed || $parsed->format( 'Y-m-d' ) !== $raw_date ) {
+
+				return new \WP_Error(
+					'pdxw_inquiry_invalid_date',
+					__( 'Please enter a valid desired date.', 'promi-data-x-woo' )
+				);
+			}
+
+			$desired_date = $raw_date;
+		}
+
+		$items       = is_array( $data['items'] ?? null ) ? $data['items'] : [];
+		$items_json  = $items ? wp_json_encode( $items ) : null;
+		$total       = isset( $data['total'] ) && is_numeric( $data['total'] )
+			? round( (float) $data['total'], 2 )
+			: null;
+
+
 		$selections       = $data['selections'] ?? null;
 		$selections_json =
 			is_array( $selections ) && ! empty( $selections )
@@ -111,6 +144,11 @@ final class Inquiries {
 				'phone'        => $phone,
 				'message'      => $message,
 				'selections'   => $selections_json,
+				'source'       => $source,
+				'company'      => '' !== $company ? $company : null,
+				'desired_date' => $desired_date,
+				'items'        => $items_json,
+				'total'        => $total,
 				'status'       => self::STATUS_NEW,
 				'ip_address'   => self::client_ip(),
 				'created_at'   => current_time( 'mysql' ),
@@ -141,6 +179,11 @@ final class Inquiries {
 				'phone'      => $phone,
 				'quantity'   => $quantity,
 				'message'    => $message,
+				'source'     => $source,
+				'company'    => $company,
+				'date'       => $desired_date,
+				'items'      => $items,
+				'total'      => $total,
 			]
 		);
 
@@ -449,10 +492,59 @@ final class Inquiries {
 			$inquiry['message'] ? $inquiry['message'] : '—'
 		);
 
+		$headers = [];
+
+		if ( 'cart' === ( $inquiry['source'] ?? '' ) ) {
+
+			$subject = sprintf(
+				/* translators: %s: site name. */
+				__( '[%s] New cart quote request', 'promi-data-x-woo' ),
+				wp_strip_all_tags( get_bloginfo( 'name' ) )
+			);
+
+			if ( ! empty( $inquiry['company'] ) ) {
+				$body .= sprintf( "\n%s: %s\n", __( 'Company', 'promi-data-x-woo' ), $inquiry['company'] );
+			}
+
+			if ( ! empty( $inquiry['date'] ) ) {
+				$body .= sprintf( "%s: %s\n", __( 'Desired date', 'promi-data-x-woo' ), $inquiry['date'] );
+			}
+
+			$body .= "\n" . __( 'Cart items', 'promi-data-x-woo' ) . ":\n";
+
+			foreach ( (array) ( $inquiry['items'] ?? [] ) as $i => $item ) {
+
+				$body .= sprintf(
+					"%d. %s%s — %s × %d — %s\n",
+					$i + 1,
+					$item['name'] ?? '',
+					! empty( $item['sku'] ) ? ' (' . $item['sku'] . ')' : '',
+					__( 'Qty', 'promi-data-x-woo' ),
+					(int) ( $item['quantity'] ?? 0 ),
+					number_format_i18n( (float) ( $item['line_total'] ?? 0 ), 2 )
+				);
+
+				foreach ( (array) ( $item['details'] ?? [] ) as $detail ) {
+					$body .= '   - ' . $detail . "\n";
+				}
+			}
+
+			if ( null !== ( $inquiry['total'] ?? null ) ) {
+				$body .= sprintf(
+					"\n%s: %s\n",
+					__( 'Net total', 'promi-data-x-woo' ),
+					number_format_i18n( (float) $inquiry['total'], 2 )
+				);
+			}
+
+			$headers[] = 'Reply-To: ' . $inquiry['email'];
+		}
+
 		wp_mail(
 			$to,
 			$subject,
-			$body
+			$body,
+			$headers
 		);
 	}
 

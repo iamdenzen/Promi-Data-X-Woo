@@ -35,6 +35,8 @@ final class Ajax {
 
 	public const SUBMIT_INQUIRY_ACTION = 'cx_submit_inquiry';
 
+	public const SUBMIT_CART_INQUIRY_ACTION = 'cx_submit_cart_inquiry';
+
 
 	private ProductData $product_data;
 
@@ -129,6 +131,23 @@ final class Ajax {
 			[
 				$this,
 				'submit_inquiry',
+			]
+		);
+
+
+		add_action(
+			'wp_ajax_' . self::SUBMIT_CART_INQUIRY_ACTION,
+			[
+				$this,
+				'submit_cart_inquiry',
+			]
+		);
+
+		add_action(
+			'wp_ajax_nopriv_' . self::SUBMIT_CART_INQUIRY_ACTION,
+			[
+				$this,
+				'submit_cart_inquiry',
 			]
 		);
 
@@ -754,6 +773,176 @@ final class Ajax {
 						'Thank you — your request has been sent. We will get back to you shortly.',
 						'promi-data-x-woo'
 					),
+			]
+		);
+	}
+
+
+	/**
+	 * Submit a quote request for the whole cart.
+	 *
+	 * Cart lines and totals are always read from WC()->cart server-side;
+	 * only the customer details are taken from the request.
+	 */
+	public function submit_cart_inquiry(): void {
+
+		$this->verify_nonce();
+
+		// Honeypot: real users never fill this hidden field.
+		if ( ! empty( $_POST['website'] ) ) {
+
+			wp_send_json_success(
+				[
+					'message' => __( 'Thank you — your request has been sent. We will get back to you shortly.', 'promi-data-x-woo' ),
+				]
+			);
+		}
+
+		if ( empty( $_POST['consent'] ) ) {
+
+			wp_send_json_error(
+				[ 'message' => __( 'Please accept the privacy policy.', 'promi-data-x-woo' ) ],
+				400
+			);
+		}
+
+		$ip       = isset( $_SERVER['REMOTE_ADDR'] ) ? sanitize_text_field( (string) $_SERVER['REMOTE_ADDR'] ) : '';
+		$rate_key = 'pdxw_cart_inq_' . md5( $ip );
+		$count    = (int) get_transient( $rate_key );
+
+		if ( $count >= 5 ) {
+
+			wp_send_json_error(
+				[ 'message' => __( 'Too many requests. Please try again later.', 'promi-data-x-woo' ) ],
+				429
+			);
+		}
+
+		$this->ensure_cart();
+
+		$cart = WC()->cart;
+
+		if ( $cart->is_empty() ) {
+
+			wp_send_json_error(
+				[ 'message' => __( 'Your cart is empty.', 'promi-data-x-woo' ) ],
+				400
+			);
+		}
+
+		$pricing_cart = ( function_exists( 'pdxw' ) && pdxw() && pdxw()->pricing() )
+			? pdxw()->pricing()->cart()
+			: null;
+
+		$items     = [];
+		$total_qty = 0;
+
+		foreach ( $cart->get_cart() as $cart_item ) {
+
+			$product = $cart_item['data'] ?? null;
+
+			if ( ! $product instanceof \WC_Product ) {
+				continue;
+			}
+
+			$qty     = absint( $cart_item['quantity'] ?? 0 );
+			$details = [];
+
+			if ( $product instanceof WC_Product_Variation ) {
+
+				foreach ( $product->get_variation_attributes() as $attr_key => $attr_value ) {
+
+					if ( '' === $attr_value ) {
+						continue;
+					}
+
+					$taxonomy = str_replace( 'attribute_', '', $attr_key );
+					$term     = taxonomy_exists( $taxonomy ) ? get_term_by( 'slug', $attr_value, $taxonomy ) : false;
+
+					$details[] = sprintf(
+						'%s: %s',
+						wc_attribute_label( $taxonomy ),
+						$term && ! is_wp_error( $term ) ? $term->name : $attr_value
+					);
+				}
+			}
+
+			foreach ( $this->printing->cart()->selections( $cart_item ) as $position_id => $selection ) {
+
+				$position = $this->printing->positions()->find( absint( $position_id ) );
+				$option   = $this->printing->options()->find( absint( $selection['option_id'] ?? 0 ) );
+
+				if ( ! $position || ! $option ) {
+					continue;
+				}
+
+				$colors = absint( $selection['colors'] ?? 0 );
+
+				$details[] = sprintf(
+					'%s · %s%s',
+					$option->name,
+					$position->position_label,
+					$colors ? ' (' . $colors . ' ' . __( 'colors', 'promi-data-x-woo' ) . ')' : ''
+				);
+			}
+
+			$line_total = $pricing_cart
+				? $pricing_cart->breakdown_value( $cart_item, 'line_total' )
+				: (float) ( $cart_item['line_total'] ?? 0 );
+
+			$items[] = [
+				'product_id'   => (int) $product->get_parent_id() ?: (int) $product->get_id(),
+				'variation_id' => absint( $cart_item['variation_id'] ?? 0 ),
+				'name'         => wp_strip_all_tags( $product->get_name() ),
+				'sku'          => (string) $product->get_sku(),
+				'quantity'     => $qty,
+				'line_total'   => round( $line_total, 2 ),
+				'details'      => $details,
+			];
+
+			$total_qty += $qty;
+		}
+
+		if ( ! $items ) {
+
+			wp_send_json_error(
+				[ 'message' => __( 'Your cart is empty.', 'promi-data-x-woo' ) ],
+				400
+			);
+		}
+
+		$net_total = (float) $cart->get_total( 'edit' ) - (float) $cart->get_total_tax();
+
+		$result = Inquiries::submit(
+			[
+				'source'       => 'cart',
+				'product_id'   => 0,
+				'variation_id' => 0,
+				'quantity'     => $total_qty,
+				'name'         => wp_unslash( $_POST['name'] ?? '' ),
+				'email'        => wp_unslash( $_POST['email'] ?? '' ),
+				'phone'        => wp_unslash( $_POST['phone'] ?? '' ),
+				'company'      => wp_unslash( $_POST['company'] ?? '' ),
+				'desired_date' => wp_unslash( $_POST['desired_date'] ?? '' ),
+				'message'      => wp_unslash( $_POST['message'] ?? '' ),
+				'items'        => $items,
+				'total'        => $net_total,
+			]
+		);
+
+		if ( is_wp_error( $result ) ) {
+
+			wp_send_json_error(
+				[ 'message' => $result->get_error_message() ],
+				400
+			);
+		}
+
+		set_transient( $rate_key, $count + 1, HOUR_IN_SECONDS );
+
+		wp_send_json_success(
+			[
+				'message' => __( 'Thank you — your request has been sent. We will get back to you shortly.', 'promi-data-x-woo' ),
 			]
 		);
 	}

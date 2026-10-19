@@ -220,7 +220,7 @@ final class InquiriesPage {
 
 						<?php
 						$this->empty_row(
-							9,
+							10,
 							__( 'No inquiries found.', 'promi-data-x-woo' )
 						);
 						?>
@@ -263,7 +263,13 @@ final class InquiriesPage {
 								</td>
 
 								<td>
-									<?php $this->render_product_link( $product_id ); ?>
+									<?php
+									if ( 'cart' === ( $row['source'] ?? '' ) ) {
+										$this->render_cart_details( $row );
+									} else {
+										$this->render_product_link( $product_id );
+									}
+									?>
 								</td>
 
 								<td>
@@ -426,6 +432,81 @@ final class InquiriesPage {
 	| Product Link
 	|--------------------------------------------------------------------------
 	*/
+
+	/**
+	 * Cart-based inquiry: summary line with an expandable item list.
+	 *
+	 * @param array<string,mixed> $row
+	 */
+	private function render_cart_details( array $row ): void {
+
+		$items = json_decode( (string) ( $row['items'] ?? '' ), true );
+		$items = is_array( $items ) ? $items : [];
+
+		?>
+		<details class="pdxw-inquiry-cart">
+			<summary>
+				<strong>
+					<?php
+					echo esc_html(
+						sprintf(
+							/* translators: %d: number of cart line items. */
+							_n( 'Cart (%d item)', 'Cart (%d items)', count( $items ), 'promi-data-x-woo' ),
+							count( $items )
+						)
+					);
+					?>
+				</strong>
+			</summary>
+
+			<?php if ( ! empty( $row['company'] ) ) : ?>
+				<p>
+					<?php echo esc_html__( 'Company', 'promi-data-x-woo' ); ?>:
+					<?php echo esc_html( (string) $row['company'] ); ?>
+				</p>
+			<?php endif; ?>
+
+			<?php if ( ! empty( $row['desired_date'] ) ) : ?>
+				<p>
+					<?php echo esc_html__( 'Desired date', 'promi-data-x-woo' ); ?>:
+					<?php echo esc_html( (string) $row['desired_date'] ); ?>
+				</p>
+			<?php endif; ?>
+
+			<ol>
+				<?php foreach ( $items as $item ) : ?>
+					<li>
+						<?php
+						echo esc_html(
+							sprintf(
+								'%s%s × %d — %s',
+								(string) ( $item['name'] ?? '' ),
+								! empty( $item['sku'] ) ? ' (' . $item['sku'] . ')' : '',
+								(int) ( $item['quantity'] ?? 0 ),
+								number_format_i18n( (float) ( $item['line_total'] ?? 0 ), 2 )
+							)
+						);
+						?>
+						<?php if ( ! empty( $item['details'] ) && is_array( $item['details'] ) ) : ?>
+							<br>
+							<small><?php echo esc_html( implode( ' | ', array_map( 'strval', $item['details'] ) ) ); ?></small>
+						<?php endif; ?>
+					</li>
+				<?php endforeach; ?>
+			</ol>
+
+			<?php if ( null !== ( $row['total'] ?? null ) ) : ?>
+				<p>
+					<strong>
+						<?php echo esc_html__( 'Net total', 'promi-data-x-woo' ); ?>:
+						<?php echo esc_html( number_format_i18n( (float) $row['total'], 2 ) ); ?>
+					</strong>
+				</p>
+			<?php endif; ?>
+		</details>
+		<?php
+	}
+
 
 	private function render_product_link(
 		int $product_id

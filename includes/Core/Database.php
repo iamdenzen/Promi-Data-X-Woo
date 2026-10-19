@@ -15,7 +15,7 @@ defined( 'ABSPATH' ) || exit;
  */
 final class Database {
 
-	public const VERSION = '1.5.4';
+	public const VERSION = '1.5.5';
 
 	public const VERSION_OPTION = 'pdxw_db_version';
 
@@ -689,6 +689,11 @@ final class Database {
 			phone varchar(100) DEFAULT NULL,
 			message longtext DEFAULT NULL,
 			selections longtext DEFAULT NULL,
+			source varchar(20) NOT NULL DEFAULT 'product',
+			company varchar(255) DEFAULT NULL,
+			desired_date date DEFAULT NULL,
+			items longtext DEFAULT NULL,
+			total decimal(12,2) DEFAULT NULL,
 			status varchar(20) NOT NULL DEFAULT 'new',
 			ip_address varchar(100) DEFAULT NULL,
 			created_at datetime DEFAULT CURRENT_TIMESTAMP,
