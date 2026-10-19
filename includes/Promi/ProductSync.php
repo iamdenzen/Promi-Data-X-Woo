@@ -536,7 +536,7 @@ final class ProductSync {
 			$this->text_field( $other['Brand'] ?? '' )
 		);
 
-		if ( $brand_name ) {
+		if ( $is_new && $brand_name ) {
 
 			$this->catalog->brands()->assign(
 				$product->get_id(),
@@ -553,7 +553,7 @@ final class ProductSync {
 			$this->text_field( $other['Category'] ?? '' )
 		);
 
-		if ( $category_key ) {
+		if ( $is_new && $category_key ) {
 
 			$this->catalog->categories()->assign_by_promi_key(
 				$product->get_id(),
