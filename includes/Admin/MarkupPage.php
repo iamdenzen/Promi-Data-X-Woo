@@ -178,7 +178,8 @@ final class MarkupPage {
 		string $prefix,
 		array $items,
 		array $overridden_ids,
-		string $placeholder
+		string $placeholder,
+		bool $remote = false
 	): void {
 
 		$base =
@@ -201,13 +202,15 @@ final class MarkupPage {
 
 			<div style="margin: 6px 0;">
 
-				<button
-					type="button"
-					id="<?php echo esc_attr( $base ); ?>-select-matching"
-					class="button button-small"
-				>
-					<?php echo esc_html__( 'Select all matching', 'promi-data-x-woo' ); ?>
-				</button>
+				<?php if ( ! $remote ) : ?>
+					<button
+						type="button"
+						id="<?php echo esc_attr( $base ); ?>-select-matching"
+						class="button button-small"
+					>
+						<?php echo esc_html__( 'Select all matching', 'promi-data-x-woo' ); ?>
+					</button>
+				<?php endif; ?>
 
 				<button
 					type="button"
@@ -229,6 +232,12 @@ final class MarkupPage {
 				id="<?php echo esc_attr( $base ); ?>-list"
 				style="max-height: 260px; overflow: auto; border: 1px solid #c3c4c7; background: #fff; padding: 4px 8px;"
 			>
+
+				<?php if ( $remote ) : ?>
+					<p class="description pdxw-pick-hint" style="margin: 6px 0;">
+						<?php echo esc_html__( 'Type at least 2 characters to search.', 'promi-data-x-woo' ); ?>
+					</p>
+				<?php endif; ?>
 
 				<?php foreach ( $items as $item ) : ?>
 
@@ -294,33 +303,63 @@ final class MarkupPage {
 
 
 	/**
-	 * Return all global print options.
+	 * Return the print options with the given IDs, keyed by ID.
 	 *
-	 * We read directly from the existing plugin table here because this admin
-	 * page only needs a lightweight list of IDs and names.
+	 * The print option table is far too large to load whole, so the page
+	 * only fetches the rows it actually shows (the existing overrides).
+	 * Everything else is found through the REST search endpoint.
+	 *
+	 * @param int[] $ids
+	 * @return array<int,object>
 	 */
-	private function print_options(): array {
+	private function print_options_by_id( array $ids ): array {
 
 		global $wpdb;
+
+		$ids =
+			array_values(
+				array_unique(
+					array_filter(
+						array_map( 'absint', $ids )
+					)
+				)
+			);
+
+		if ( empty( $ids ) ) {
+			return [];
+		}
 
 		$table =
 			Database::table(
 				'print_options'
 			);
 
-		$results =
-			$wpdb->get_results(
-				"SELECT
-					id,
-					name,
-					sku
-				FROM {$table}
-				ORDER BY name ASC"
+		$placeholders =
+			implode(
+				',',
+				array_fill( 0, count( $ids ), '%d' )
 			);
 
-		return is_array( $results )
-			? $results
-			: [];
+		$results =
+			$wpdb->get_results(
+				$wpdb->prepare(
+					"SELECT
+						id,
+						name,
+						sku
+					FROM {$table}
+					WHERE id IN ({$placeholders})",
+					$ids
+				)
+			);
+
+		$by_id = [];
+
+		foreach ( (array) $results as $row ) {
+			$by_id[ (int) $row->id ] = $row;
+		}
+
+		return $by_id;
 	}
 
 
@@ -459,17 +498,12 @@ final class MarkupPage {
 		}
 
 		$print_options =
-			$this->print_options();
-
-		$print_picker_items = [];
-
-		foreach ( $print_options as $option ) {
-
-			$print_picker_items[] = [
-				'id'    => absint( $option->id ),
-				'label' => $this->print_option_label( $option ),
-			];
-		}
+			$this->print_options_by_id(
+				wp_list_pluck(
+					$print_option_rules,
+					'id'
+				)
+			);
 
 		$brands =
 			$this->brands();
@@ -792,9 +826,10 @@ final class MarkupPage {
 				<?php
 				$this->render_picker(
 					'po',
-					$print_picker_items,
+					[],
 					$print_option_rule_ids,
-					__( 'Search name or SKU…', 'promi-data-x-woo' )
+					__( 'Search name or SKU…', 'promi-data-x-woo' ),
+					true
 				);
 				?>
 
@@ -881,19 +916,11 @@ final class MarkupPage {
 									$option_id
 								);
 
-							foreach ( $print_options as $option ) {
-
-								if (
-									absint( $option->id )
-									=== $option_id
-								) {
-									$option_name =
-										$this->print_option_label(
-											$option
-										);
-
-									break;
-								}
+							if ( isset( $print_options[ $option_id ] ) ) {
+								$option_name =
+									$this->print_option_label(
+										$print_options[ $option_id ]
+									);
 							}
 							?>
 
@@ -1513,10 +1540,22 @@ final class MarkupPage {
 			| selection lives in a Set of ids so it survives changing the search.
 			*/
 
-			function createPicker( prefix ) {
+			function createPicker( prefix, remote, overriddenIds ) {
 
 				const base =
 					'pdxw-' + prefix;
+
+				// Remote mode: rows come from the REST search endpoint, not
+				// from the page. labels remembers every name seen so far so
+				// selected / saved ids can still be named after a new search.
+				const labels = {};
+
+				const overriddenSet =
+					new Set(
+						( overriddenIds || [] ).map( String )
+					);
+
+				let requestId = 0;
 
 				const list =
 					document.getElementById(
@@ -1592,6 +1631,12 @@ final class MarkupPage {
 					overridden
 				) {
 
+					if ( overridden ) {
+						overriddenSet.add( String( id ) );
+					} else {
+						overriddenSet.delete( String( id ) );
+					}
+
 					const item =
 						items[ String( id ) ];
 
@@ -1611,12 +1656,182 @@ final class MarkupPage {
 					const item =
 						items[ String( id ) ];
 
-					return item
-						? item.dataset.path
-						: '#' + id;
+					if ( item ) {
+						return item.dataset.path;
+					}
+
+					return labels[ String( id ) ]
+						|| '#' + id;
+				}
+
+				function renderRemote( rows ) {
+
+					Object.keys( items ).forEach(
+						function ( key ) {
+							delete items[ key ];
+						}
+					);
+
+					list.innerHTML = '';
+
+					if ( ! rows.length ) {
+
+						const none =
+							document.createElement( 'p' );
+
+						none.className = 'description';
+
+						none.style.margin = '6px 0';
+
+						none.textContent =
+							<?php echo wp_json_encode( __( 'No matching print options.', 'promi-data-x-woo' ) ); ?>;
+
+						list.appendChild( none );
+
+						updateCounter();
+
+						return;
+					}
+
+					const fragment =
+						document.createDocumentFragment();
+
+					rows.forEach(
+						function ( row ) {
+
+							const key =
+								String( row.id );
+
+							labels[ key ] = row.label;
+
+							const label =
+								document.createElement( 'label' );
+
+							label.className = 'pdxw-pick-item';
+
+							label.dataset.path = row.label;
+
+							label.style.display = 'block';
+
+							label.style.padding = '2px 0';
+
+							const box =
+								document.createElement( 'input' );
+
+							box.type = 'checkbox';
+
+							box.value = key;
+
+							box.checked = selected.has( key );
+
+							const text =
+								document.createElement( 'span' );
+
+							text.className = 'pdxw-pick-label';
+
+							text.textContent = ' ' + row.label;
+
+							const badge =
+								document.createElement( 'em' );
+
+							badge.className = 'pdxw-pick-badge';
+
+							badge.style.color = '#2271b1';
+
+							badge.style.marginLeft = '6px';
+
+							badge.style.display =
+								overriddenSet.has( key )
+									? ''
+									: 'none';
+
+							badge.textContent =
+								<?php echo wp_json_encode( __( 'overridden', 'promi-data-x-woo' ) ); ?>;
+
+							label.appendChild( box );
+
+							label.appendChild( text );
+
+							label.appendChild( badge );
+
+							fragment.appendChild( label );
+
+							items[ key ] = label;
+						}
+					);
+
+					list.appendChild( fragment );
+
+					updateCounter();
+				}
+
+				function remoteSearch() {
+
+					const term =
+						search.value.trim();
+
+					const current =
+						++requestId;
+
+					if ( term.length < 2 ) {
+
+						Object.keys( items ).forEach(
+							function ( key ) {
+								delete items[ key ];
+							}
+						);
+
+						list.innerHTML =
+							'<p class="description pdxw-pick-hint" style="margin:6px 0;">'
+							+ escapeHtml(
+								<?php echo wp_json_encode( __( 'Type at least 2 characters to search.', 'promi-data-x-woo' ) ); ?>
+							)
+							+ '</p>';
+
+						updateCounter();
+
+						return;
+					}
+
+					apiFetch(
+						'/pricing/print-options/search?q='
+							+ encodeURIComponent( term )
+					)
+					.then(
+						function ( rows ) {
+
+							// Ignore answers to an outdated query.
+							if ( current !== requestId ) {
+								return;
+							}
+
+							renderRemote(
+								Array.isArray( rows )
+									? rows
+									: []
+							);
+						}
+					)
+					.catch(
+						function ( error ) {
+
+							showNotice(
+								error.message
+								|| <?php echo wp_json_encode( __( 'Search failed.', 'promi-data-x-woo' ) ); ?>,
+								'error'
+							);
+						}
+					);
 				}
 
 				function filter() {
+
+					if ( remote ) {
+
+						remoteSearch();
+
+						return;
+					}
 
 					const words =
 						search.value
@@ -1658,7 +1873,9 @@ final class MarkupPage {
 						timer =
 							window.setTimeout(
 								filter,
-								100
+								remote
+									? 300
+									: 100
 							);
 					}
 				);
@@ -1684,11 +1901,15 @@ final class MarkupPage {
 					}
 				);
 
-				document
-					.getElementById(
+				const selectMatching =
+					document.getElementById(
 						base + '-select-matching'
-					)
-					.addEventListener(
+					);
+
+				// Not rendered for the remote (print option) picker.
+				if ( selectMatching ) {
+
+					selectMatching.addEventListener(
 						'click',
 						function () {
 
@@ -1709,6 +1930,7 @@ final class MarkupPage {
 							updateCounter();
 						}
 					);
+				}
 
 				document
 					.getElementById(
@@ -1734,7 +1956,11 @@ final class MarkupPage {
 				createPicker( 'cat' );
 
 			const printPicker =
-				createPicker( 'po' );
+				createPicker(
+					'po',
+					true,
+					<?php echo wp_json_encode( array_values( $print_option_rule_ids ) ); ?>
+				);
 
 
 			/*

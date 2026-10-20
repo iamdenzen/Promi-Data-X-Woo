@@ -2,6 +2,8 @@
 
 namespace PromiDataXWoo\Pricing;
 
+use PromiDataXWoo\Core\Database;
+
 defined( 'ABSPATH' ) || exit;
 
 /**
@@ -190,6 +192,28 @@ final class RestController {
 					[
 						$this,
 						'get_print_options',
+					],
+			]
+		);
+
+
+		register_rest_route(
+			'pdxw/v1',
+			'/pricing/print-options/search',
+			[
+				'methods' =>
+					\WP_REST_Server::READABLE,
+
+				'permission_callback' =>
+					[
+						$this,
+						'permission',
+					],
+
+				'callback' =>
+					[
+						$this,
+						'search_print_options',
 					],
 			]
 		);
@@ -1003,6 +1027,96 @@ final class RestController {
 				->markup_rules()
 				->print_option_overrides()
 		);
+	}
+
+
+	/**
+	 * Search print options by name or SKU.
+	 *
+	 * The print option table is far too large to render in the admin
+	 * page, so the markup picker queries it on demand. Results are
+	 * capped; every word of the query must match the name or the SKU.
+	 */
+	public function search_print_options(
+		\WP_REST_Request $request
+	): \WP_REST_Response {
+
+		global $wpdb;
+
+		$query =
+			trim(
+				(string) $request->get_param( 'q' )
+			);
+
+		$words =
+			array_filter(
+				preg_split( '/\s+/', $query )
+			);
+
+		if (
+			strlen( $query ) < 2
+			|| empty( $words )
+		) {
+			return new \WP_REST_Response( [] );
+		}
+
+		$table =
+			Database::table(
+				'print_options'
+			);
+
+		$where = [];
+
+		$args = [];
+
+		foreach ( array_slice( $words, 0, 6 ) as $word ) {
+
+			$like =
+				'%' . $wpdb->esc_like( $word ) . '%';
+
+			$where[] =
+				'(name LIKE %s OR sku LIKE %s)';
+
+			$args[] = $like;
+
+			$args[] = $like;
+		}
+
+		$args[] = 50;
+
+		// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+		$sql =
+			"SELECT id, name, sku
+			FROM {$table}
+			WHERE " . implode( ' AND ', $where ) . '
+			ORDER BY name ASC
+			LIMIT %d';
+
+		$rows =
+			$wpdb->get_results(
+				// phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared
+				$wpdb->prepare( $sql, $args )
+			);
+
+		$out = [];
+
+		foreach ( (array) $rows as $row ) {
+
+			$name =
+				trim( (string) $row->name );
+
+			$sku =
+				trim( (string) $row->sku );
+
+			$out[] = [
+				'id'    => (int) $row->id,
+				'label' => ( '' !== $name && '' !== $sku )
+					? $name . ' — ' . $sku
+					: ( '' !== $name ? $name : $sku ),
+			];
+		}
+
+		return new \WP_REST_Response( $out );
 	}
 
 
