@@ -420,6 +420,8 @@ final class Admin {
 
 		$this->product_meta_box->init();
 
+		( new ProductTierPricingBox() )->init();
+
 
 		/*
 		|--------------------------------------------------------------------------
