@@ -123,12 +123,12 @@ abstract class AbstractPricingTool implements ToolInterface {
 				],
 				'level'   => [
 					'type'        => 'string',
-					'enum'        => [ 'default', 'supplier', 'category', 'print_option', 'product' ],
-					'description' => 'Where the rule applies. The most specific level wins: product > print_option (print parts only) > category > supplier > default.',
+					'enum'        => [ 'default', 'category', 'supplier', 'supplier_category', 'print_option', 'product' ],
+					'description' => 'Where the rule applies. Priority after fixed prices - article: product > supplier_category > supplier > category > default. print_price/print_fee: print_option > supplier_category > supplier > category > default (no product level for print parts; use a fixed price). supplier_category is ONE markup for a supplier prefix AND a category together (includes sub-categories); it is not the sum of the supplier and category markups.',
 				],
 				'target'  => [
 					'type'        => 'string',
-					'description' => 'supplier: SKU prefix such as "A34". category: product_cat term id. print_option: print option id. product: product id. Omit for default.',
+					'description' => 'supplier: SKU prefix such as "A34". category: product_cat term id. supplier_category: "PREFIX:CATEGORY_ID", e.g. "A34:12". print_option: print option id. product: product id (article only). Omit for default.',
 				],
 				'percent' => [
 					'type'        => [ 'number', 'null' ],

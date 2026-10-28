@@ -265,9 +265,10 @@ final class PricingApi {
 				'sample' => PriceLocks::all( 20 ),
 			],
 			'resolution'   => [
-				'article'     => 'product > category (deepest) > supplier (SKU prefix) > default',
-				'print_price' => 'product > print_option > category (deepest) > supplier (SKU prefix) > default',
-				'print_fee'   => 'product > print_option > category (deepest) > supplier (SKU prefix) > default',
+				'article'     => 'fixed price > product > supplier + category > supplier (SKU prefix) > category (deepest) > default',
+				'print_price' => 'fixed price > print_option > supplier + category > supplier (SKU prefix) > category (deepest) > default',
+				'print_fee'   => 'fixed price > print_option > supplier + category > supplier (SKU prefix) > category (deepest) > default',
+				'note'        => 'Supplier + category is one markup for a supplier prefix AND a category together (level supplier_category, target "A34:12"); it is not the sum of the two.',
 				'fixed'       => 'Fixed prices bypass discount, markup and rounding; locks freeze current prices as fixed prices.',
 			],
 		];

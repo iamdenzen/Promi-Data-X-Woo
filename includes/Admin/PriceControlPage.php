@@ -273,6 +273,7 @@ final class PriceControlPage {
 .pdxw-badge.lvl-print_option{background:#bae6fd;color:#075985}
 .pdxw-badge.lvl-category{background:#bbf7d0;color:#14532d}
 .pdxw-badge.lvl-supplier{background:#fed7aa;color:#7c2d12}
+.pdxw-badge.lvl-supplier_category{background:#fbcfe8;color:#831843}
 .pdxw-badge.lvl-default{background:#e5e7eb;color:#374151}
 .pdxw-badge.locked{background:#fecaca;color:#7f1d1d}
 .pdxw-modal{position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:100000;display:flex;align-items:center;justify-content:center}
@@ -322,7 +323,7 @@ window.PDXW={
  clear:function(n){while(n.firstChild){n.removeChild(n.firstChild);}}
 };
 PDXW.PARTS={article:'Article price',print_price:'Print unit price',print_fee:'Print fees'};
-PDXW.LEVELS={'default':'Default',supplier:'Supplier (SKU prefix)',category:'Category',print_option:'Print option',product:'Product'};
+PDXW.LEVELS={'default':'Default',category:'Category',supplier:'Supplier (SKU prefix)',supplier_category:'Supplier + category',print_option:'Print option',product:'Product'};
 })();
 JS;
 	}
@@ -367,7 +368,7 @@ function renderRules(d){
  var box=$('pdxw-rules-list');PDXW.clear(box);
  ['article','print_price','print_fee'].forEach(function(part){
   var rows=rules.filter(function(r){return r.part===part;});
-  var order={'default':0,supplier:1,category:2,print_option:3,product:4};
+  var order={'default':0,category:1,supplier:2,supplier_category:3,print_option:4,product:5};
   rows.sort(function(a,b){return (order[a.level]-order[b.level])||String(a.label).localeCompare(b.label);});
   var tb=E('tbody');
   rows.forEach(function(r){
@@ -382,13 +383,11 @@ function renderRules(d){
    E('thead',{},E('tr',{},E('th',{text:'Level'}),E('th',{text:'Applies to'}),E('th',{text:'Markup',class:'pdxw-num'}),E('th',{text:''}))),tb));
  });
  var s='Fixed prices: '+(d.fixed_prices?d.fixed_prices.total:0)+' · Locked products: '+(d.locks?d.locks.total:0)+'. ';
- box.appendChild(E('p',{class:'pdxw-muted',text:s+'Order: product > print option > category > supplier > default.'}));
+ box.appendChild(E('p',{class:'pdxw-muted',text:s+'Priority after fixed prices. Article: product > supplier + category > supplier > category > default. Print price and print fees: print option > supplier + category > supplier > category > default.'}));
 }
 
 function levelsFor(part){
- var l=['default','supplier','category','product'];
- if(part!=='article'){l.splice(3,0,'print_option');}
- return l;
+ return ['default','category','supplier','supplier_category',part==='article'?'product':'print_option'];
 }
 function refreshLevels(){
  var part=$('pdxw-f-part').value,sel=$('pdxw-f-level'),cur=sel.value;
@@ -400,13 +399,20 @@ function refreshLevels(){
 function refreshTarget(){
  var level=$('pdxw-f-level').value,slot=$('pdxw-f-target-slot');PDXW.clear(slot);
  var hint={'default':'Applies to every product without a more specific rule.',
-  supplier:'Enter the SKU prefix, e.g. A34. Longest matching prefix wins.',
-  category:'The deepest matching category of the product wins.',
+  supplier:'Enter the SKU prefix, e.g. A34. Longest matching prefix wins. Beats a plain category rule.',
+  category:'The deepest matching category of the product wins (includes sub-categories).',
+  supplier_category:'ONE markup for a supplier AND a category together. It only applies to products matching both (sub-categories included); it is not the sum of the supplier and category markups.',
   print_option:'Enter the print option ID (see the Printing page).',
-  product:'Enter the product ID. Overrides every other level.'}[level];
+  product:'Enter the product ID. Overrides every other level for the article price.'}[level];
  $('pdxw-f-hint').textContent=hint;
  $('pdxw-f-remove').disabled=(level==='default');
  if(level==='default'){slot.appendChild(E('em',{class:'pdxw-muted',text:'—'}));return;}
+ if(level==='supplier_category'){
+  slot.appendChild(E('input',{type:'text',id:'pdxw-f-sup',style:'width:90px',placeholder:'A34'}));
+  slot.appendChild(document.createTextNode(' + '));
+  var cs=E('select',{id:'pdxw-f-cat'});
+  cats.forEach(function(c){cs.appendChild(E('option',{value:c.id,text:c.name}));});
+  slot.appendChild(cs);return;}
  if(level==='category'){
   var s=E('select',{id:'pdxw-f-target'});
   cats.forEach(function(c){s.appendChild(E('option',{value:c.id,text:c.name}));});
@@ -414,18 +420,34 @@ function refreshTarget(){
  slot.appendChild(E('input',{type:'text',id:'pdxw-f-target',style:'width:140px',
   placeholder:level==='supplier'?'A34':'ID'}));
 }
+function getTarget(level){
+ if(level==='supplier_category'){
+  var p=$('pdxw-f-sup'),c=$('pdxw-f-cat');
+  return (p&&c&&p.value.trim())?(p.value.trim().toUpperCase()+':'+c.value):'';
+ }
+ var t=$('pdxw-f-target');return t?t.value.trim():'';
+}
+function setTarget(level,v){
+ if(level==='supplier_category'){
+  var a=String(v).split(':');
+  if($('pdxw-f-sup')){$('pdxw-f-sup').value=a[0]||'';}
+  if($('pdxw-f-cat')){$('pdxw-f-cat').value=a[1]||'';}
+  return;
+ }
+ if($('pdxw-f-target')){$('pdxw-f-target').value=v;}
+}
 function fill(r){
  $('pdxw-f-part').value=r.part;refreshLevels();
  $('pdxw-f-level').value=r.level;refreshTarget();
- if($('pdxw-f-target')){$('pdxw-f-target').value=r.target;}
+ setTarget(r.level,r.target);
  $('pdxw-f-percent').value=r.markup_percent;
  window.scrollTo({top:$('pdxw-f-part').getBoundingClientRect().top+window.scrollY-120,behavior:'smooth'});
 }
 
 function queue(remove){
- var level=$('pdxw-f-level').value,t=$('pdxw-f-target');
+ var level=$('pdxw-f-level').value;
  var change={type:'markup',part:$('pdxw-f-part').value,level:level,
-  target:t?t.value.trim():'',percent:null};
+  target:getTarget(level),percent:null};
  if(!remove){
   var p=$('pdxw-f-percent').value;
   if(p===''){msg('Enter a markup percent.','pdxw-err');return;}
@@ -437,6 +459,7 @@ function queue(remove){
 }
 function describe(c){
  var where=c.level==='default'?'default':(PDXW.LEVELS[c.level]+' '+c.target);
+ if(c.level==='supplier_category'){var sc=String(c.target).split(':');var fc=cats.filter(function(x){return String(x.id)===sc[1];})[0];where='supplier '+sc[0]+' + category '+(fc?fc.name.replace(/^[— ]+/,''):sc[1]);}
  if(c.level==='category'){var f=cats.filter(function(x){return String(x.id)===String(c.target);})[0];if(f){where='category '+f.name.replace(/^[— ]+/,'');}}
  return PDXW.PARTS[c.part]+' · '+where+' → '+(c.percent===null?'remove rule':PDXW.pct(c.percent));
 }

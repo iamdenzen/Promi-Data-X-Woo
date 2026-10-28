@@ -14,7 +14,7 @@ final class ListPricingRulesTool extends AbstractPricingTool {
 	}
 
 	public function description(): string {
-		return 'Lists every active pricing rule: markups for the three price parts (article, print_price, print_fee) at every level (default, supplier SKU prefix, category, print option, product), plus fixed-price and lock summaries and the precedence order. Admin only.';
+		return 'Lists every active pricing rule: markups for the three price parts (article, print_price, print_fee) at every level (default, category, supplier SKU prefix, supplier + category, print option, product), plus fixed-price and lock summaries and the precedence order. Admin only.';
 	}
 
 	public function input_schema(): array {

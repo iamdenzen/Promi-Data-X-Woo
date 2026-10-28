@@ -12,12 +12,17 @@ defined( 'ABSPATH' ) || exit;
  *
  * Article price:
  *
- *     product  >  category (deepest)  >  supplier (SKU prefix)  >  default
+ *     product  >  supplier + category  >  supplier (SKU prefix)
+ *              >  category (deepest)  >  default
  *
- * Print unit price / print fee:
+ * Print unit price / print fee (no product-level markup; use a fixed price):
  *
- *     product  >  print option  >  category (deepest)
- *              >  supplier (SKU prefix)  >  default
+ *     print option  >  supplier + category  >  supplier (SKU prefix)
+ *                   >  category (deepest)  >  default
+ *
+ * "Supplier + category" is ONE markup set for a supplier prefix and a
+ * category together. It applies only when the product matches both (the
+ * category includes its sub-categories); it is not the sum of the two.
  *
  * Every default is 0% when unset: no markup is applied until configured.
  *
@@ -32,7 +37,7 @@ defined( 'ABSPATH' ) || exit;
  *
  *     [
  *         'percent' => float,
- *         'level'   => 'product'|'print_option'|'category'|'supplier'|'default',
+ *         'level'   => 'product'|'print_option'|'supplier_category'|'supplier'|'category'|'default',
  *         'label'   => human readable origin, e.g. "Category: USB Sticks",
  *         'target'  => id / prefix of the matching rule ('' for default),
  *     ]
@@ -52,6 +57,7 @@ final class MarkupRules {
 	public const LEVEL_PRINT_OPTION = 'print_option';
 	public const LEVEL_CATEGORY     = 'category';
 	public const LEVEL_SUPPLIER     = 'supplier';
+	public const LEVEL_SUPPLIER_CATEGORY = 'supplier_category';
 	public const LEVEL_DEFAULT      = 'default';
 
 	/**
@@ -238,6 +244,26 @@ final class MarkupRules {
 				);
 			}
 
+			$combined =
+				$this->combined_match(
+					ScopedRuleRepository::PART_ARTICLE,
+					$product_id
+				);
+
+			if ( $combined ) {
+				return $combined;
+			}
+
+			$supplier =
+				$this->scoped->match_supplier(
+					ScopedRuleRepository::PART_ARTICLE,
+					$this->sku( $product_id )
+				);
+
+			if ( $supplier ) {
+				return $this->supplier_result( $supplier );
+			}
+
 			$category = $this->best_category(
 				$product_id,
 				fn( int $term_id ) =>
@@ -249,16 +275,6 @@ final class MarkupRules {
 
 			if ( $category ) {
 				return $this->category_result( $category );
-			}
-
-			$supplier =
-				$this->scoped->match_supplier(
-					ScopedRuleRepository::PART_ARTICLE,
-					$this->sku( $product_id )
-				);
-
-			if ( $supplier ) {
-				return $this->supplier_result( $supplier );
 			}
 		}
 
@@ -364,25 +380,6 @@ final class MarkupRules {
 		$print_option_id = absint( $print_option_id );
 		$product_id      = absint( $product_id );
 
-		if ( $product_id ) {
-
-			$product_rule =
-				$this->scoped->get(
-					$part,
-					ScopedRuleRepository::LEVEL_PRODUCT,
-					(string) $product_id
-				);
-
-			if ( null !== $product_rule ) {
-				return $this->result(
-					$product_rule,
-					self::LEVEL_PRODUCT,
-					'Product #' . $product_id,
-					(string) $product_id
-				);
-			}
-		}
-
 		if ( $print_option_id ) {
 
 			$option_rule =
@@ -408,6 +405,23 @@ final class MarkupRules {
 
 		if ( $product_id ) {
 
+			$combined =
+				$this->combined_match( $part, $product_id );
+
+			if ( $combined ) {
+				return $combined;
+			}
+
+			$supplier =
+				$this->scoped->match_supplier(
+					$part,
+					$this->sku( $product_id )
+				);
+
+			if ( $supplier ) {
+				return $this->supplier_result( $supplier );
+			}
+
 			$category = $this->best_category(
 				$product_id,
 				fn( int $term_id ) =>
@@ -420,16 +434,6 @@ final class MarkupRules {
 
 			if ( $category ) {
 				return $this->category_result( $category );
-			}
-
-			$supplier =
-				$this->scoped->match_supplier(
-					$part,
-					$this->sku( $product_id )
-				);
-
-			if ( $supplier ) {
-				return $this->supplier_result( $supplier );
 			}
 		}
 
@@ -447,6 +451,98 @@ final class MarkupRules {
 	| Category resolution
 	|--------------------------------------------------------------------------
 	*/
+
+	/**
+	 * Supplier + category rule for a product, if both parts match.
+	 *
+	 * The SKU must start with the rule's prefix and the product must be in
+	 * the rule's category or one of its sub-categories. With several
+	 * matches the longest prefix wins, then the deepest category, then the
+	 * lowest term id.
+	 *
+	 * @return array{percent:float,level:string,label:string,target:string}|null
+	 */
+	private function combined_match(
+		string $part,
+		int $product_id
+	): ?array {
+
+		$rules = $this->scoped->combined_rules( $part );
+
+		if ( empty( $rules ) ) {
+			return null;
+		}
+
+		$sku = strtoupper( trim( $this->sku( $product_id ) ) );
+
+		if ( '' === $sku ) {
+			return null;
+		}
+
+		$own = wp_get_post_terms(
+			$product_id,
+			'product_cat',
+			[ 'fields' => 'ids' ]
+		);
+
+		if ( is_wp_error( $own ) || empty( $own ) ) {
+			return null;
+		}
+
+		// Every category the product belongs to, including ancestors.
+		$in_tree = [];
+
+		foreach ( $own as $term_id ) {
+
+			$term_id = absint( $term_id );
+
+			$in_tree[ $term_id ] = true;
+
+			foreach ( get_ancestors( $term_id, 'product_cat' ) as $ancestor ) {
+				$in_tree[ absint( $ancestor ) ] = true;
+			}
+		}
+
+		$best     = null;
+		$best_key = null;
+
+		foreach ( $rules as $rule ) {
+
+			if (
+				! isset( $in_tree[ $rule['term_id'] ] )
+				|| ! str_starts_with( $sku, $rule['prefix'] )
+			) {
+				continue;
+			}
+
+			$depth = count( get_ancestors( $rule['term_id'], 'product_cat' ) ) + 1;
+
+			$key = [ strlen( $rule['prefix'] ), $depth, -$rule['term_id'] ];
+
+			if ( null === $best_key || $key > $best_key ) {
+				$best_key = $key;
+				$best     = $rule;
+			}
+		}
+
+		if ( ! $best ) {
+			return null;
+		}
+
+		$term = get_term( $best['term_id'], 'product_cat' );
+
+		$name = $term && ! is_wp_error( $term )
+			? $term->name
+			: '#' . $best['term_id'];
+
+		return $this->result(
+			$best['markup'],
+			self::LEVEL_SUPPLIER_CATEGORY,
+			'Supplier + category: ' . $best['prefix'] . ' + ' . $name,
+			$best['prefix'] . ':' . $best['term_id']
+		);
+	}
+
 
 	/**
 	 * Find the rule on the deepest category of the product.
@@ -675,6 +771,10 @@ final class MarkupRules {
 				$label = 'Category: ' . ( $term && ! is_wp_error( $term ) ? $term->name : '#' . $row['target_key'] );
 			} elseif ( ScopedRuleRepository::LEVEL_SUPPLIER === $row['level'] ) {
 				$label = 'Supplier: ' . $row['target_key'];
+			} elseif ( ScopedRuleRepository::LEVEL_SUPPLIER_CATEGORY === $row['level'] ) {
+				[ $prefix, $term_id ] = array_pad( explode( ':', $row['target_key'], 2 ), 2, '0' );
+				$term  = get_term( (int) $term_id, 'product_cat' );
+				$label = 'Supplier + category: ' . $prefix . ' + ' . ( $term && ! is_wp_error( $term ) ? $term->name : '#' . $term_id );
 			} else {
 				$label = 'Product #' . $row['target_key'];
 			}
@@ -778,7 +878,7 @@ final class MarkupRules {
 
 			} else {
 
-				$key = self::LEVEL_SUPPLIER === $level
+				$key = in_array( $level, [ self::LEVEL_SUPPLIER, self::LEVEL_SUPPLIER_CATEGORY ], true )
 					? strtoupper( $target )
 					: $target;
 

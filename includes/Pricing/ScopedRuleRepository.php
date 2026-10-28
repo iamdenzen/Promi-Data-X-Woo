@@ -23,6 +23,12 @@ final class ScopedRuleRepository {
 	public const LEVEL_PRODUCT  = 'product';
 
 	/**
+	 * One markup for a supplier AND a category together
+	 * (target_key "A34:12" = SKU prefix + category term id).
+	 */
+	public const LEVEL_SUPPLIER_CATEGORY = 'supplier_category';
+
+	/**
 	 * Per-request cache of supplier rules, longest prefix first.
 	 *
 	 * @var array<string,array<int,array{prefix:string,markup:float}>>
@@ -63,6 +69,7 @@ final class ScopedRuleRepository {
 			self::LEVEL_SUPPLIER,
 			self::LEVEL_CATEGORY,
 			self::LEVEL_PRODUCT,
+			self::LEVEL_SUPPLIER_CATEGORY,
 		];
 	}
 
@@ -285,6 +292,66 @@ final class ScopedRuleRepository {
 
 
 	/**
+	 * Supplier + category rules of one part, longest prefix first.
+	 *
+	 * @return array<int,array{prefix:string,term_id:int,markup:float}>
+	 */
+	public function combined_rules( string $part ): array {
+
+		$cache_key = 'combined:' . $part;
+
+		if ( isset( $this->supplier_cache[ $cache_key ] ) ) {
+			return $this->supplier_cache[ $cache_key ];
+		}
+
+		$by_key = [];
+
+		foreach ( $this->all( $part, self::LEVEL_SUPPLIER_CATEGORY ) as $row ) {
+			$by_key[ $row['target_key'] ] = $row['markup_percent'];
+		}
+
+		foreach ( $this->overlay as $key => $value ) {
+
+			[ $o_part, $o_level, $o_key ] = array_pad( explode( '|', $key, 3 ), 3, '' );
+
+			if ( $o_part !== $part || self::LEVEL_SUPPLIER_CATEGORY !== $o_level ) {
+				continue;
+			}
+
+			if ( null === $value ) {
+				unset( $by_key[ $o_key ] );
+			} else {
+				$by_key[ $o_key ] = max( 0.0, (float) $value );
+			}
+		}
+
+		$rules = [];
+
+		foreach ( $by_key as $key => $markup ) {
+
+			[ $prefix, $term_id ] = array_pad( explode( ':', (string) $key, 2 ), 2, '' );
+
+			if ( '' === $prefix || ! ctype_digit( $term_id ) ) {
+				continue;
+			}
+
+			$rules[] = [
+				'prefix'  => $prefix,
+				'term_id' => (int) $term_id,
+				'markup'  => (float) $markup,
+			];
+		}
+
+		usort(
+			$rules,
+			static fn( $a, $b ) => strlen( $b['prefix'] ) <=> strlen( $a['prefix'] )
+		);
+
+		return $this->supplier_cache[ $cache_key ] = $rules;
+	}
+
+
+	/**
 	 * Longest matching supplier rule for a SKU.
 	 *
 	 * @return array{prefix:string,markup:float}|null
@@ -351,6 +418,17 @@ final class ScopedRuleRepository {
 
 		if ( self::LEVEL_SUPPLIER === $level ) {
 			return strtoupper( $key );
+		}
+
+		if ( self::LEVEL_SUPPLIER_CATEGORY === $level ) {
+
+			[ $prefix, $term_id ] = array_pad( explode( ':', $key, 2 ), 2, '' );
+
+			$prefix = strtoupper( trim( $prefix ) );
+
+			return '' !== $prefix && ctype_digit( $term_id ) && (int) $term_id > 0
+				? $prefix . ':' . (int) $term_id
+				: '';
 		}
 
 		// Category and product levels are numeric ids.

@@ -251,6 +251,13 @@ final class ChangeSet {
 						case MarkupRules::LEVEL_PRODUCT:
 							$reprice_ids[] = (int) $change['target'];
 							break;
+						case MarkupRules::LEVEL_SUPPLIER_CATEGORY:
+							// Products matching both the prefix and the category.
+							$reprice_ids = array_merge(
+								$reprice_ids,
+								self::candidates( $pricing, $change )[0]
+							);
+							break;
 					}
 				}
 
@@ -374,16 +381,17 @@ final class ChangeSet {
 			return new \WP_Error( 'pdxw_bad_part', 'part must be article, print_price or print_fee.' );
 		}
 
+		// Article: product level; print parts: print option level instead
+		// (per-product print control is done with fixed prices or a lock).
 		$levels = [
 			MarkupRules::LEVEL_DEFAULT,
-			MarkupRules::LEVEL_SUPPLIER,
 			MarkupRules::LEVEL_CATEGORY,
-			MarkupRules::LEVEL_PRODUCT,
+			MarkupRules::LEVEL_SUPPLIER,
+			MarkupRules::LEVEL_SUPPLIER_CATEGORY,
+			ScopedRuleRepository::PART_ARTICLE === $part
+				? MarkupRules::LEVEL_PRODUCT
+				: MarkupRules::LEVEL_PRINT_OPTION,
 		];
-
-		if ( ScopedRuleRepository::PART_ARTICLE !== $part ) {
-			$levels[] = MarkupRules::LEVEL_PRINT_OPTION;
-		}
 
 		if ( ! in_array( $level, $levels, true ) ) {
 			return new \WP_Error(
@@ -394,10 +402,32 @@ final class ChangeSet {
 
 		$target = trim( (string) ( $change['target'] ?? '' ) );
 
+		// Supplier + category may be given as separate fields.
+		if (
+			MarkupRules::LEVEL_SUPPLIER_CATEGORY === $level
+			&& '' === $target
+			&& isset( $change['supplier'], $change['category'] )
+		) {
+			$target = trim( (string) $change['supplier'] ) . ':' . trim( (string) $change['category'] );
+		}
+
 		switch ( $level ) {
 
 			case MarkupRules::LEVEL_DEFAULT:
 				$target = '';
+				break;
+
+			case MarkupRules::LEVEL_SUPPLIER_CATEGORY:
+				[ $prefix, $term_id ] = array_pad( explode( ':', $target, 2 ), 2, '' );
+				$prefix  = strtoupper( trim( $prefix ) );
+				$term_id = trim( $term_id );
+				if ( ! preg_match( '/^[A-Z0-9_\-]{1,50}$/', $prefix ) ) {
+					return new \WP_Error( 'pdxw_bad_target', 'Supplier + category target must look like "A34:12" (SKU prefix, colon, category id).' );
+				}
+				if ( ! ctype_digit( $term_id ) || ! term_exists( (int) $term_id, 'product_cat' ) ) {
+					return new \WP_Error( 'pdxw_bad_target', 'The category in a supplier + category target must be an existing product_cat term id.' );
+				}
+				$target = $prefix . ':' . (int) $term_id;
 				break;
 
 			case MarkupRules::LEVEL_SUPPLIER:
@@ -790,6 +820,21 @@ final class ChangeSet {
 				$ids = $pricing->markup_rules()->scoped()->products_for_prefix( $target );
 				break;
 
+			case MarkupRules::LEVEL_SUPPLIER_CATEGORY:
+				[ $prefix, $term_id ] = array_pad( explode( ':', $target, 2 ), 2, '0' );
+				$terms    = array_merge(
+					[ (int) $term_id ],
+					array_map( 'absint', (array) get_term_children( (int) $term_id, 'product_cat' ) )
+				);
+				$in_terms = get_objects_in_term( $terms, 'product_cat' );
+				$ids      = array_values(
+					array_intersect(
+						$pricing->markup_rules()->scoped()->products_for_prefix( $prefix ),
+						is_wp_error( $in_terms ) ? [] : array_map( 'absint', $in_terms )
+					)
+				);
+				break;
+
 			case MarkupRules::LEVEL_CATEGORY:
 				$terms    = array_merge(
 					[ (int) $target ],
@@ -1020,9 +1065,22 @@ final class ChangeSet {
 
 	private static function describe_markup( array $c, ?float $old ): string {
 
-		$where = MarkupRules::LEVEL_DEFAULT === $c['level']
-			? 'default'
-			: $c['level'] . ' ' . $c['target'];
+		if ( MarkupRules::LEVEL_DEFAULT === $c['level'] ) {
+			$where = 'default';
+		} elseif ( MarkupRules::LEVEL_SUPPLIER_CATEGORY === $c['level'] ) {
+
+			[ $prefix, $term_id ] = array_pad( explode( ':', $c['target'], 2 ), 2, '0' );
+
+			$term  = get_term( (int) $term_id, 'product_cat' );
+			$where = sprintf(
+				'supplier %s + category %s',
+				$prefix,
+				$term && ! is_wp_error( $term ) ? $term->name : '#' . $term_id
+			);
+
+		} else {
+			$where = $c['level'] . ' ' . $c['target'];
+		}
 
 		$old_text = null === $old ? 'none' : rtrim( rtrim( number_format( $old, 4, '.', '' ), '0' ), '.' ) . '%';
 
