@@ -2,6 +2,8 @@
 
 namespace PromiDataXWoo\Printing;
 
+use PromiDataXWoo\Pricing\FixedPrices;
+
 defined( 'ABSPATH' ) || exit;
 
 /**
@@ -112,7 +114,9 @@ final class Configurator {
 
 			$config[] = $this->prepare_position(
 				$position,
-				$options
+				$options,
+				$product_id,
+				$variation_id
 			);
 		}
 
@@ -192,7 +196,9 @@ final class Configurator {
 
 		foreach ( $options as $option ) {
 			$result[] = $this->prepare_option(
-				$option
+				$option,
+				$product_id,
+				$variation_id
 			);
 		}
 
@@ -389,7 +395,9 @@ final class Configurator {
 
 	private function prepare_position(
 		object $position,
-		array $options
+		array $options,
+		int $product_id = 0,
+		int $variation_id = 0
 	): array {
 
 		$prepared_options = [];
@@ -397,7 +405,9 @@ final class Configurator {
 		foreach ( $options as $option ) {
 			$prepared_options[] =
 				$this->prepare_option(
-					$option
+					$option,
+					$product_id,
+					$variation_id
 				);
 		}
 
@@ -441,7 +451,9 @@ final class Configurator {
 	*/
 
 	private function prepare_option(
-		object $option
+		object $option,
+		int $product_id = 0,
+		int $variation_id = 0
 	): array {
 
 		$option_id = (int)
@@ -488,13 +500,17 @@ final class Configurator {
 			'prices' =>
 				$this->prepare_prices(
 					$option_id,
-					$prices
+					$prices,
+					$product_id,
+					$variation_id
 				),
 
 			'fees' =>
 				$this->prepare_fees(
 					$option_id,
-					$fees
+					$fees,
+					$product_id,
+					$variation_id
 				),
 		];
 	}
@@ -502,26 +518,45 @@ final class Configurator {
 
 	private function prepare_prices(
 		int $option_id,
-		array $prices
+		array $prices,
+		int $product_id = 0,
+		int $variation_id = 0
 	): array {
 
 		$result = [];
 
-		foreach ( $prices as $price ) {
+		$quantities = [];
 
-			$quantity =
-				max(
-					1,
-					(int)
-						$price
-							->min_qty
-				);
+		foreach ( $prices as $price ) {
+			$quantities[] = max( 1, (int) $price->min_qty );
+		}
+
+		// Fixed tiers replace the Promi tier ladder for this product.
+		$fixed_quantities =
+			$product_id
+				? FixedPrices::tier_quantities(
+					FixedPrices::KIND_PRINT_PRICE,
+					$product_id,
+					$variation_id,
+					$option_id
+				)
+				: [];
+
+		if ( $fixed_quantities ) {
+			$quantities = $fixed_quantities;
+		}
+
+		foreach ( $quantities as $quantity ) {
 
 			$processed =
 				$this->calculator
 					->calculate_selection(
 						$option_id,
-						$quantity
+						$quantity,
+						[
+							'product_id'   => $product_id,
+							'variation_id' => $variation_id,
+						]
 					);
 
 			$result[] = [
@@ -542,7 +577,9 @@ final class Configurator {
 
 	private function prepare_fees(
 		int $option_id,
-		array $fees
+		array $fees,
+		int $product_id = 0,
+		int $variation_id = 0
 	): array {
 
 		$result = [];
@@ -606,7 +643,10 @@ final class Configurator {
 						$option_id,
 						$cost_basis,
 						(string) $fee->fee_type,
-						(string) $fee->fee_label
+						(string) $fee->fee_label,
+						$product_id,
+						$variation_id,
+						(int) ( $fee->id ?? 0 )
 					);
 
 			$result[] = [

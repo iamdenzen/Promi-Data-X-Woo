@@ -299,6 +299,9 @@ final class Fees {
 
 			$result[] = [
 
+				'id' =>
+					(int) ( $fee->id ?? 0 ),
+
 				'type' =>
 					$type,
 
@@ -307,6 +310,11 @@ final class Fees {
 
 				'raw' =>
 					$raw,
+
+				// Cost per fee unit, before the colors / quantity / positions
+				// multiplier (raw = base x multiplier).
+				'base' =>
+					(float) $value,
 			];
 		}
 

@@ -7,39 +7,38 @@ defined( 'ABSPATH' ) || exit;
 /**
  * Pricing markup business rules.
  *
- * Article:
+ * Three price parts, each with its own markup, resolved independently.
+ * The most specific level wins:
  *
- *     product category
- *         ↓
- *     most specific matching category rule
- *         ↓
- *     default article markup
+ * Article price:
  *
- * Printing / decoration (price and fee are configured separately):
+ *     product  >  category (deepest)  >  supplier (SKU prefix)  >  default
  *
- *     print option
- *         ↓
- *     print-option price / fee markup
- *         ↓
- *     default print price / fee markup
+ * Print unit price / print fee:
+ *
+ *     product  >  print option  >  category (deepest)
+ *              >  supplier (SKU prefix)  >  default
  *
  * Every default is 0% when unset: no markup is applied until configured.
  *
- * Manufacturer discounts are intentionally NOT handled here.
+ * A fixed price (FixedPrices) bypasses all of this and is checked by the
+ * callers before a markup is resolved.
  *
- * Manufacturer discounts are handled by:
+ * Manufacturer / supplier DISCOUNTS are intentionally NOT handled here
+ * (see ManufacturerDiscount and SupplierDiscount); they reduce the cost
+ * before the markup is applied.
  *
- *     ManufacturerDiscount
+ * Each resolve_*() method returns:
  *
- * using the existing WooCommerce `product_brand` taxonomy.
+ *     [
+ *         'percent' => float,
+ *         'level'   => 'product'|'print_option'|'category'|'supplier'|'default',
+ *         'label'   => human readable origin, e.g. "Category: USB Sticks",
+ *         'target'  => id / prefix of the matching rule ('' for default),
+ *     ]
  */
 final class MarkupRules {
 
-	/**
-	 * Default article/category markup.
-	 *
-	 * 0 = no markup is applied unless configured.
-	 */
 	public const DEFAULT_ARTICLE_MARKUP =
 		0.0;
 
@@ -49,33 +48,43 @@ final class MarkupRules {
 	public const DEFAULT_PRINT_FEE_MARKUP =
 		0.0;
 
+	public const LEVEL_PRODUCT      = 'product';
+	public const LEVEL_PRINT_OPTION = 'print_option';
+	public const LEVEL_CATEGORY     = 'category';
+	public const LEVEL_SUPPLIER     = 'supplier';
+	public const LEVEL_DEFAULT      = 'default';
+
 	/**
 	 * Manufacturer discount term-meta key.
 	 *
 	 * Kept here as a shared compatibility constant because
 	 * ManufacturerDiscount currently references this constant.
-	 *
-	 * The actual manufacturer-discount logic belongs exclusively to
-	 * ManufacturerDiscount.
 	 */
 	public const MANUFACTURER_DISCOUNT_META =
 		'pdxw_manufacturer_discount';
 
 
-	/**
-	 * Markup rule repository.
-	 */
 	private MarkupRepository $repository;
 
+	private ScopedRuleRepository $scoped;
 
 	/**
-	 * Constructor.
+	 * What-if defaults used by previews: "part|default|" => percent.
+	 *
+	 * @var array<string,float>
 	 */
+	private array $overlay = [];
+
+
 	public function __construct(
-		MarkupRepository $repository
+		MarkupRepository $repository,
+		?ScopedRuleRepository $scoped = null
 	) {
 		$this->repository =
 			$repository;
+
+		$this->scoped =
+			$scoped ?? new ScopedRuleRepository();
 	}
 
 
@@ -85,14 +94,11 @@ final class MarkupRules {
 	|--------------------------------------------------------------------------
 	*/
 
-	/**
-	 * Get the default article/category markup.
-	 *
-	 * Default:
-	 *
-	 *     0% (no markup)
-	 */
 	public function article_default(): float {
+
+		if ( array_key_exists( 'article|default|', $this->overlay ) ) {
+			return max( 0.0, (float) $this->overlay['article|default|'] );
+		}
 
 		return max(
 			0.0,
@@ -103,11 +109,11 @@ final class MarkupRules {
 		);
 	}
 
-
-	/**
-	 * Default print option price markup.
-	 */
 	public function print_price_default(): float {
+
+		if ( array_key_exists( 'print_price|default|', $this->overlay ) ) {
+			return max( 0.0, (float) $this->overlay['print_price|default|'] );
+		}
 
 		return max(
 			0.0,
@@ -118,10 +124,11 @@ final class MarkupRules {
 		);
 	}
 
-	/**
-	 * Default print option fee/setup markup.
-	 */
 	public function print_fee_default(): float {
+
+		if ( array_key_exists( 'print_fee|default|', $this->overlay ) ) {
+			return max( 0.0, (float) $this->overlay['print_fee|default|'] );
+		}
 
 		return max(
 			0.0,
@@ -132,51 +139,67 @@ final class MarkupRules {
 		);
 	}
 
-
-	/**
-	 * Set the default article/category markup.
-	 */
 	public function set_article_default(
 		float $markup
 	): void {
 
+		$previous = (float) get_option( 'pdxw_default_article_markup', 0.0 );
+
 		update_option(
 			'pdxw_default_article_markup',
-			max(
-				0.0,
-				$markup
-			),
+			max( 0.0, $markup ),
 			false
 		);
-	}
 
+		if ( abs( $previous - max( 0.0, $markup ) ) > 0.00001 ) {
+			History::record_rule_write(
+				sprintf( 'article markup, default: %s%% -> %s%%', $previous, max( 0.0, $markup ) ),
+				0,
+				[ 'part' => 'article', 'level' => 'default', 'old' => $previous, 'new' => max( 0.0, $markup ) ]
+			);
+		}
+	}
 
 	public function set_print_price_default(
 		float $markup
 	): void {
 
+		$previous = (float) get_option( 'pdxw_default_print_price_markup', 0.0 );
+
 		update_option(
 			'pdxw_default_print_price_markup',
-			max(
-				0.0,
-				$markup
-			),
+			max( 0.0, $markup ),
 			false
 		);
+
+		if ( abs( $previous - max( 0.0, $markup ) ) > 0.00001 ) {
+			History::record_rule_write(
+				sprintf( 'print_price markup, default: %s%% -> %s%%', $previous, max( 0.0, $markup ) ),
+				0,
+				[ 'part' => 'print_price', 'level' => 'default', 'old' => $previous, 'new' => max( 0.0, $markup ) ]
+			);
+		}
 	}
 
 	public function set_print_fee_default(
 		float $markup
 	): void {
 
+		$previous = (float) get_option( 'pdxw_default_print_fee_markup', 0.0 );
+
 		update_option(
 			'pdxw_default_print_fee_markup',
-			max(
-				0.0,
-				$markup
-			),
+			max( 0.0, $markup ),
 			false
 		);
+
+		if ( abs( $previous - max( 0.0, $markup ) ) > 0.00001 ) {
+			History::record_rule_write(
+				sprintf( 'print_fee markup, default: %s%% -> %s%%', $previous, max( 0.0, $markup ) ),
+				0,
+				[ 'part' => 'print_fee', 'level' => 'default', 'old' => $previous, 'new' => max( 0.0, $markup ) ]
+			);
+		}
 	}
 
 
@@ -187,296 +210,377 @@ final class MarkupRules {
 	*/
 
 	/**
+	 * Resolve the article markup and the level that supplied it.
+	 *
+	 * @return array{percent:float,level:string,label:string,target:string}
+	 */
+	public function resolve_article(
+		int $product_id
+	): array {
+
+		$product_id = absint( $product_id );
+
+		if ( $product_id ) {
+
+			$product_rule =
+				$this->scoped->get(
+					ScopedRuleRepository::PART_ARTICLE,
+					ScopedRuleRepository::LEVEL_PRODUCT,
+					(string) $product_id
+				);
+
+			if ( null !== $product_rule ) {
+				return $this->result(
+					$product_rule,
+					self::LEVEL_PRODUCT,
+					'Product #' . $product_id,
+					(string) $product_id
+				);
+			}
+
+			$category = $this->best_category(
+				$product_id,
+				fn( int $term_id ) =>
+					$this->repository->get(
+						MarkupRepository::TYPE_CATEGORY,
+						$term_id
+					)
+			);
+
+			if ( $category ) {
+				return $this->category_result( $category );
+			}
+
+			$supplier =
+				$this->scoped->match_supplier(
+					ScopedRuleRepository::PART_ARTICLE,
+					$this->sku( $product_id )
+				);
+
+			if ( $supplier ) {
+				return $this->supplier_result( $supplier );
+			}
+		}
+
+		return $this->result(
+			$this->article_default(),
+			self::LEVEL_DEFAULT,
+			'Default',
+			''
+		);
+	}
+
+	/**
 	 * Return the applicable article markup for a product.
-	 *
-	 * Article markup is configured against the existing WooCommerce
-	 * `product_cat` taxonomy.
-	 *
-	 * The most specific matching category wins.
-	 *
-	 * Example:
-	 *
-	 *     Promotional Products     25%
-	 *         USB Sticks           25%
-	 *             Metal USB Sticks 20%
-	 *
-	 * A product in "Metal USB Sticks" receives 20%.
-	 *
-	 * If no category rule exists, the configured default article markup
-	 * is returned.
 	 */
 	public function article_markup(
 		int $product_id
 	): float {
 
-		$product_id =
-			absint(
-				$product_id
-			);
-
-
-		if ( ! $product_id ) {
-			return $this->article_default();
-		}
-
-
-		$category_ids =
-			wp_get_post_terms(
-				$product_id,
-				'product_cat',
-				[
-					'fields' =>
-						'ids',
-				]
-			);
-
-
-		if (
-			is_wp_error(
-				$category_ids
-			)
-			|| empty(
-				$category_ids
-			)
-		) {
-			return $this->article_default();
-		}
-
-
-		$best_markup =
-			null;
-
-
-		$best_depth =
-			-1;
-
-
-		foreach (
-			$category_ids as $category_id
-		) {
-
-			$category_id =
-				absint(
-					$category_id
-				);
-
-
-			if ( ! $category_id ) {
-				continue;
-			}
-
-
-			/*
-			 * Build the category chain starting with the actual product
-			 * category and then walking up through its ancestors.
-			 *
-			 * Example:
-			 *
-			 *     Metal USB Sticks
-			 *     USB Sticks
-			 *     Promotional Products
-			 */
-			$chain = [
-				$category_id,
-			];
-
-
-			$ancestors =
-				get_ancestors(
-					$category_id,
-					'product_cat'
-				);
-
-
-			foreach (
-				$ancestors as $ancestor
-			) {
-
-				$ancestor =
-					absint(
-						$ancestor
-					);
-
-
-				if ( ! $ancestor ) {
-					continue;
-				}
-
-
-				$chain[] =
-					$ancestor;
-			}
-
-
-			/*
-			 * Look for the most specific configured rule in this chain.
-			 */
-			foreach (
-				$chain as $depth => $term_id
-			) {
-
-				$term_id =
-					absint(
-						$term_id
-					);
-
-
-				if ( ! $term_id ) {
-					continue;
-				}
-
-
-				$markup =
-					$this->repository
-						->get(
-							MarkupRepository::TYPE_CATEGORY,
-							$term_id
-						);
-
-
-				if (
-					null === $markup
-				) {
-					continue;
-				}
-
-
-				/*
-				 * The first item in the chain is the most specific
-				 * category.
-				 *
-				 * Therefore:
-				 *
-				 *     child category = greater depth
-				 *     parent category = lower depth
-				 *
-				 * KNOWN LIMITATION: $actual_depth below is derived from the
-				 * length of THIS chain, not from the term's absolute depth in
-				 * the category tree. Inside one chain the ordering is correct,
-				 * but when a product is assigned to several categories on
-				 * branches of different depth, the values of different chains
-				 * are not comparable (a rule on a shallow category in a short
-				 * chain can outrank a rule on a deeper category in a longer
-				 * chain). Intentionally left as is for now.
-				 */
-				$actual_depth =
-					count( $chain )
-					- $depth;
-
-
-				if (
-					$actual_depth
-					> $best_depth
-				) {
-
-					$best_depth =
-						$actual_depth;
-
-
-					$best_markup =
-						(float) $markup;
-				}
-			}
-		}
-
-
-		return null !== $best_markup
-			? $best_markup
-			: $this->article_default();
+		return $this->resolve_article( $product_id )['percent'];
 	}
 
 
 	/*
 	|--------------------------------------------------------------------------
-	| Finishing / Print Option Markup
+	| Print price / print fee markup
 	|--------------------------------------------------------------------------
 	*/
 
 	/**
-	 * Return the print-price markup for a single print option.
+	 * @return array{percent:float,level:string,label:string,target:string}
 	 */
-	public function print_price_markup(
-		int $print_option_id
-	): float {
+	public function resolve_print_price(
+		int $print_option_id,
+		int $product_id = 0
+	): array {
 
-		$print_option_id =
-			absint(
-				$print_option_id
-			);
-
-		if ( ! $print_option_id ) {
-			return $this->print_price_default();
-		}
-
-		$markup =
-			$this->repository
-				->get(
-					MarkupRepository::TYPE_PRINT_OPTION_PRICE,
-					$print_option_id
-				);
-
-		if ( null !== $markup ) {
-			return (float) $markup;
-		}
-
-		$legacy =
-			$this->repository
-				->get(
-					MarkupRepository::TYPE_PRINT_OPTION,
-					$print_option_id
-				);
-
-		return null !== $legacy
-			? (float) $legacy
-			: $this->print_price_default();
+		return $this->resolve_print(
+			ScopedRuleRepository::PART_PRINT_PRICE,
+			MarkupRepository::TYPE_PRINT_OPTION_PRICE,
+			$print_option_id,
+			$product_id,
+			$this->print_price_default()
+		);
 	}
 
 	/**
-	 * Return the setup/fee markup for a single print option.
+	 * @return array{percent:float,level:string,label:string,target:string}
 	 */
-	public function print_fee_markup(
-		int $print_option_id
-	): float {
+	public function resolve_print_fee(
+		int $print_option_id,
+		int $product_id = 0
+	): array {
 
-		$print_option_id =
-			absint(
-				$print_option_id
-			);
-
-		if ( ! $print_option_id ) {
-			return $this->print_fee_default();
-		}
-
-		$markup =
-			$this->repository
-				->get(
-					MarkupRepository::TYPE_PRINT_OPTION_FEE,
-					$print_option_id
-				);
-
-		if ( null !== $markup ) {
-			return (float) $markup;
-		}
-
-		$legacy =
-			$this->repository
-				->get(
-					MarkupRepository::TYPE_PRINT_OPTION,
-					$print_option_id
-				);
-
-		return null !== $legacy
-			? (float) $legacy
-			: $this->print_fee_default();
+		return $this->resolve_print(
+			ScopedRuleRepository::PART_PRINT_FEE,
+			MarkupRepository::TYPE_PRINT_OPTION_FEE,
+			$print_option_id,
+			$product_id,
+			$this->print_fee_default()
+		);
 	}
 
+	/**
+	 * Return the print-price markup for a print option (and product).
+	 */
+	public function print_price_markup(
+		int $print_option_id,
+		int $product_id = 0
+	): float {
+
+		return $this->resolve_print_price(
+			$print_option_id,
+			$product_id
+		)['percent'];
+	}
+
+	/**
+	 * Return the setup/fee markup for a print option (and product).
+	 */
+	public function print_fee_markup(
+		int $print_option_id,
+		int $product_id = 0
+	): float {
+
+		return $this->resolve_print_fee(
+			$print_option_id,
+			$product_id
+		)['percent'];
+	}
+
+
+	/**
+	 * @return array{percent:float,level:string,label:string,target:string}
+	 */
+	private function resolve_print(
+		string $part,
+		string $option_type,
+		int $print_option_id,
+		int $product_id,
+		float $default
+	): array {
+
+		$print_option_id = absint( $print_option_id );
+		$product_id      = absint( $product_id );
+
+		if ( $product_id ) {
+
+			$product_rule =
+				$this->scoped->get(
+					$part,
+					ScopedRuleRepository::LEVEL_PRODUCT,
+					(string) $product_id
+				);
+
+			if ( null !== $product_rule ) {
+				return $this->result(
+					$product_rule,
+					self::LEVEL_PRODUCT,
+					'Product #' . $product_id,
+					(string) $product_id
+				);
+			}
+		}
+
+		if ( $print_option_id ) {
+
+			$option_rule =
+				$this->repository->get( $option_type, $print_option_id );
+
+			if ( null === $option_rule ) {
+				$option_rule =
+					$this->repository->get(
+						MarkupRepository::TYPE_PRINT_OPTION,
+						$print_option_id
+					);
+			}
+
+			if ( null !== $option_rule ) {
+				return $this->result(
+					$option_rule,
+					self::LEVEL_PRINT_OPTION,
+					'Print option #' . $print_option_id,
+					(string) $print_option_id
+				);
+			}
+		}
+
+		if ( $product_id ) {
+
+			$category = $this->best_category(
+				$product_id,
+				fn( int $term_id ) =>
+					$this->scoped->get(
+						$part,
+						ScopedRuleRepository::LEVEL_CATEGORY,
+						(string) $term_id
+					)
+			);
+
+			if ( $category ) {
+				return $this->category_result( $category );
+			}
+
+			$supplier =
+				$this->scoped->match_supplier(
+					$part,
+					$this->sku( $product_id )
+				);
+
+			if ( $supplier ) {
+				return $this->supplier_result( $supplier );
+			}
+		}
+
+		return $this->result(
+			$default,
+			self::LEVEL_DEFAULT,
+			'Default',
+			''
+		);
+	}
+
+
+	/*
+	|--------------------------------------------------------------------------
+	| Category resolution
+	|--------------------------------------------------------------------------
+	*/
+
+	/**
+	 * Find the rule on the deepest category of the product.
+	 *
+	 * Depth is the term's absolute depth in the category tree, so rules on
+	 * different branches of a multi-category product compare correctly.
+	 * On equal depth the lowest term id wins, which keeps results stable.
+	 *
+	 * @param callable(int):?float $lookup
+	 * @return array{term_id:int,markup:float,depth:int}|null
+	 */
+	private function best_category(
+		int $product_id,
+		callable $lookup
+	): ?array {
+
+		$category_ids =
+			wp_get_post_terms(
+				$product_id,
+				'product_cat',
+				[ 'fields' => 'ids' ]
+			);
+
+		if ( is_wp_error( $category_ids ) || empty( $category_ids ) ) {
+			return null;
+		}
+
+		sort( $category_ids );
+
+		$best = null;
+
+		foreach ( $category_ids as $category_id ) {
+
+			$category_id = absint( $category_id );
+
+			if ( ! $category_id ) {
+				continue;
+			}
+
+			$chain = array_merge(
+				[ $category_id ],
+				array_map(
+					'absint',
+					get_ancestors( $category_id, 'product_cat' )
+				)
+			);
+
+			$chain_size = count( $chain );
+
+			// The first rule found walking upwards is the most specific.
+			foreach ( $chain as $index => $term_id ) {
+
+				if ( ! $term_id ) {
+					continue;
+				}
+
+				$markup = $lookup( $term_id );
+
+				if ( null === $markup ) {
+					continue;
+				}
+
+				$depth = $chain_size - $index;
+
+				if ( null === $best || $depth > $best['depth'] ) {
+					$best = [
+						'term_id' => $term_id,
+						'markup'  => (float) $markup,
+						'depth'   => $depth,
+					];
+				}
+
+				break;
+			}
+		}
+
+		return $best;
+	}
+
+	private function category_result( array $category ): array {
+
+		$term = get_term( $category['term_id'], 'product_cat' );
+
+		$name = $term && ! is_wp_error( $term )
+			? $term->name
+			: '#' . $category['term_id'];
+
+		return $this->result(
+			$category['markup'],
+			self::LEVEL_CATEGORY,
+			'Category: ' . $name,
+			(string) $category['term_id']
+		);
+	}
+
+	private function supplier_result( array $rule ): array {
+
+		return $this->result(
+			$rule['markup'],
+			self::LEVEL_SUPPLIER,
+			'Supplier: ' . $rule['prefix'],
+			$rule['prefix']
+		);
+	}
+
+	private function result(
+		float $percent,
+		string $level,
+		string $label,
+		string $target
+	): array {
+
+		return [
+			'percent' => max( 0.0, $percent ),
+			'level'   => $level,
+			'label'   => $label,
+			'target'  => $target,
+		];
+	}
+
+	private function sku( int $product_id ): string {
+
+		return (string) get_post_meta( $product_id, '_sku', true );
+	}
+
+
+	/*
+	|--------------------------------------------------------------------------
+	| Listings
+	|--------------------------------------------------------------------------
+	*/
 
 	/**
 	 * Return all print-option markup overrides, merged by print option.
-	 *
-	 * TYPE_PRINT_OPTION_PRICE and TYPE_PRINT_OPTION_FEE are stored as
-	 * separate rule rows. Admin/API consumers need one row per print
-	 * option showing both values side by side.
 	 *
 	 * Each row:
 	 *
@@ -490,24 +594,17 @@ final class MarkupRules {
 
 		$price_rules =
 			$this->repository
-				->all(
-					MarkupRepository::TYPE_PRINT_OPTION_PRICE
-				);
+				->all( MarkupRepository::TYPE_PRINT_OPTION_PRICE );
 
 		$fee_rules =
 			$this->repository
-				->all(
-					MarkupRepository::TYPE_PRINT_OPTION_FEE
-				);
+				->all( MarkupRepository::TYPE_PRINT_OPTION_FEE );
 
 		$rows = [];
 
 		foreach ( $price_rules as $rule ) {
 
-			$id =
-				absint(
-					$rule['target_id'] ?? 0
-				);
+			$id = absint( $rule['target_id'] ?? 0 );
 
 			if ( ! $id ) {
 				continue;
@@ -521,10 +618,7 @@ final class MarkupRules {
 
 		foreach ( $fee_rules as $rule ) {
 
-			$id =
-				absint(
-					$rule['target_id'] ?? 0
-				);
+			$id = absint( $rule['target_id'] ?? 0 );
 
 			if ( ! $id ) {
 				continue;
@@ -541,6 +635,163 @@ final class MarkupRules {
 		return array_values( $rows );
 	}
 
+	/**
+	 * Every active markup rule at every level and part, in one list.
+	 *
+	 * @return array<int,array{part:string,level:string,target:string,label:string,markup_percent:float}>
+	 */
+	public function all_rules(): array {
+
+		$rules = [
+			[
+				'part'           => 'article',
+				'level'          => self::LEVEL_DEFAULT,
+				'target'         => '',
+				'label'          => 'Default',
+				'markup_percent' => $this->article_default(),
+			],
+			[
+				'part'           => 'print_price',
+				'level'          => self::LEVEL_DEFAULT,
+				'target'         => '',
+				'label'          => 'Default',
+				'markup_percent' => $this->print_price_default(),
+			],
+			[
+				'part'           => 'print_fee',
+				'level'          => self::LEVEL_DEFAULT,
+				'target'         => '',
+				'label'          => 'Default',
+				'markup_percent' => $this->print_fee_default(),
+			],
+		];
+
+		foreach ( $this->scoped->all() as $row ) {
+
+			$label = $row['level'] . ': ' . $row['target_key'];
+
+			if ( ScopedRuleRepository::LEVEL_CATEGORY === $row['level'] ) {
+				$term  = get_term( (int) $row['target_key'], 'product_cat' );
+				$label = 'Category: ' . ( $term && ! is_wp_error( $term ) ? $term->name : '#' . $row['target_key'] );
+			} elseif ( ScopedRuleRepository::LEVEL_SUPPLIER === $row['level'] ) {
+				$label = 'Supplier: ' . $row['target_key'];
+			} else {
+				$label = 'Product #' . $row['target_key'];
+			}
+
+			$rules[] = [
+				'part'           => $row['part'],
+				'level'          => $row['level'],
+				'target'         => $row['target_key'],
+				'label'          => $label,
+				'markup_percent' => $row['markup_percent'],
+			];
+		}
+
+		foreach (
+			$this->repository->all( MarkupRepository::TYPE_CATEGORY ) as $row
+		) {
+			$term = get_term( (int) $row['target_id'], 'product_cat' );
+
+			$rules[] = [
+				'part'           => 'article',
+				'level'          => self::LEVEL_CATEGORY,
+				'target'         => (string) $row['target_id'],
+				'label'          => 'Category: ' . ( $term && ! is_wp_error( $term ) ? $term->name : '#' . $row['target_id'] ),
+				'markup_percent' => (float) $row['markup_percent'],
+			];
+		}
+
+		foreach (
+			[
+				MarkupRepository::TYPE_PRINT_OPTION_PRICE => 'print_price',
+				MarkupRepository::TYPE_PRINT_OPTION_FEE   => 'print_fee',
+			] as $type => $part
+		) {
+			foreach ( $this->repository->all( $type ) as $row ) {
+				$rules[] = [
+					'part'           => $part,
+					'level'          => self::LEVEL_PRINT_OPTION,
+					'target'         => (string) $row['target_id'],
+					'label'          => 'Print option #' . $row['target_id'],
+					'markup_percent' => (float) $row['markup_percent'],
+				];
+			}
+		}
+
+		return $rules;
+	}
+
+
+	/*
+	|--------------------------------------------------------------------------
+	| What-if (preview)
+	|--------------------------------------------------------------------------
+	*/
+
+	/**
+	 * Return a copy of these rules with proposed changes applied in memory.
+	 *
+	 * Nothing is written. Each change:
+	 *
+	 *     [ 'part'    => article|print_price|print_fee,
+	 *       'level'   => default|supplier|category|print_option|product,
+	 *       'target'  => id / prefix ('' for default),
+	 *       'percent' => float, or null to remove the rule ]
+	 *
+	 * @param array<int,array<string,mixed>> $changes
+	 */
+	public function with_changes( array $changes ): self {
+
+		$legacy = [];
+		$scoped = [];
+		$clone  = clone $this;
+
+		foreach ( $changes as $change ) {
+
+			$part    = (string) ( $change['part'] ?? '' );
+			$level   = (string) ( $change['level'] ?? '' );
+			$target  = (string) ( $change['target'] ?? '' );
+			$percent = array_key_exists( 'percent', $change ) && null !== $change['percent']
+				? max( 0.0, (float) $change['percent'] )
+				: null;
+
+			if ( self::LEVEL_DEFAULT === $level ) {
+
+				// A removed default falls back to 0%.
+				$clone->overlay[ "{$part}|default|" ] = $percent ?? 0.0;
+
+			} elseif (
+				ScopedRuleRepository::PART_ARTICLE === $part
+				&& self::LEVEL_CATEGORY === $level
+			) {
+
+				$legacy[ MarkupRepository::TYPE_CATEGORY . "|{$target}" ] = $percent;
+
+			} elseif ( self::LEVEL_PRINT_OPTION === $level ) {
+
+				$type = ScopedRuleRepository::PART_PRINT_PRICE === $part
+					? MarkupRepository::TYPE_PRINT_OPTION_PRICE
+					: MarkupRepository::TYPE_PRINT_OPTION_FEE;
+
+				$legacy[ "{$type}|{$target}" ] = $percent;
+
+			} else {
+
+				$key = self::LEVEL_SUPPLIER === $level
+					? strtoupper( $target )
+					: $target;
+
+				$scoped[ "{$part}|{$level}|{$key}" ] = $percent;
+			}
+		}
+
+		$clone->repository = $this->repository->with_overlay( $legacy );
+		$clone->scoped     = $this->scoped->with_overlay( $scoped );
+
+		return $clone;
+	}
+
 
 	/*
 	|--------------------------------------------------------------------------
@@ -548,13 +799,13 @@ final class MarkupRules {
 	|--------------------------------------------------------------------------
 	*/
 
-	/**
-	 * Return the underlying markup repository.
-	 *
-	 * Useful for admin/API layers that need to persist individual rules.
-	 */
 	public function repository(): MarkupRepository {
 
 		return $this->repository;
+	}
+
+	public function scoped(): ScopedRuleRepository {
+
+		return $this->scoped;
 	}
 }

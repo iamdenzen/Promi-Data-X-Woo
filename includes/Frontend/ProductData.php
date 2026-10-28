@@ -4,6 +4,7 @@ namespace PromiDataXWoo\Frontend;
 
 use PromiDataXWoo\Catalog\Catalog;
 use PromiDataXWoo\Pricing\CostCalculator;
+use PromiDataXWoo\Pricing\FixedPrices;
 use PromiDataXWoo\Pricing\Pricing;
 use PromiDataXWoo\Printing\Printing;
 use WC_Product;
@@ -1079,6 +1080,27 @@ final class ProductData {
 		int $product_id,
 		int $variation_id = 0
 	): array {
+
+		// Fixed tiers replace the Promi tier ladder for this variation.
+		$fixed_tiers =
+			FixedPrices::article_tiers(
+				$product_id,
+				$variation_id
+			);
+
+		if ( $fixed_tiers ) {
+
+			$processed = [];
+
+			foreach ( $fixed_tiers as $qty => $price ) {
+				$processed[] = [
+					'qty'   => (int) $qty,
+					'price' => (float) $price,
+				];
+			}
+
+			return $processed;
+		}
 
 		$raw_tiers =
 			$this->pricing

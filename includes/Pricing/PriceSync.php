@@ -535,8 +535,17 @@ final class PriceSync {
 	 * the report meta used by the admin.
 	 */
 	public function reprice_product(
-		int $product_id
+		int $product_id,
+		bool $force = false
 	): void {
+
+		// A locked product keeps its stored price in every recalculation.
+		if (
+			! $force
+			&& PriceLocks::is_locked( $product_id )
+		) {
+			return;
+		}
 
 		$variation_ids =
 			$this->repository

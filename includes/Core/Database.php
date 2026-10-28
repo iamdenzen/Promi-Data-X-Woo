@@ -15,7 +15,7 @@ defined( 'ABSPATH' ) || exit;
  */
 final class Database {
 
-	public const VERSION = '1.5.5';
+	public const VERSION = '1.6.0';
 
 	public const VERSION_OPTION = 'pdxw_db_version';
 
@@ -92,6 +92,18 @@ final class Database {
 
 			'supplier_discounts' =>
 				'cx_supplier_discounts',
+
+			'pricing_scoped_rules' =>
+				'cx_pricing_scoped_rules',
+
+			'fixed_prices' =>
+				'cx_fixed_prices',
+
+			'price_locks' =>
+				'cx_price_locks',
+
+			'price_history' =>
+				'cx_price_history',
 
 
 			/*
@@ -644,6 +656,152 @@ final class Database {
 
 		/*
 		|--------------------------------------------------------------------------
+		| Scoped Markup Rules
+		|--------------------------------------------------------------------------
+		|
+		| Markup levels that the legacy rules table cannot hold.
+		|
+		| part
+		|     article | print_price | print_fee
+		|
+		| level
+		|     supplier (target_key = SKU prefix, e.g. "A34")
+		|     category (target_key = term id; print parts only, the article
+		|               category rule stays in pricing_markup_rules)
+		|     product  (target_key = product id)
+		*/
+
+		$table = self::table(
+			'pricing_scoped_rules'
+		);
+
+		$sql = "CREATE TABLE {$table} (
+			id bigint unsigned NOT NULL AUTO_INCREMENT,
+			part varchar(20) NOT NULL,
+			level varchar(20) NOT NULL,
+			target_key varchar(100) NOT NULL,
+			markup_percent decimal(10,4) NOT NULL DEFAULT 0.0000,
+			enabled tinyint(1) NOT NULL DEFAULT 1,
+			created_at datetime DEFAULT CURRENT_TIMESTAMP,
+			updated_at datetime DEFAULT CURRENT_TIMESTAMP,
+			PRIMARY KEY  (id),
+			UNIQUE KEY scoped_rule_unique (part, level, target_key),
+			KEY level_idx (level),
+			KEY enabled_idx (enabled)
+		) {$charset};";
+
+		dbDelta( $sql );
+
+
+		/*
+		|--------------------------------------------------------------------------
+		| Fixed Prices
+		|--------------------------------------------------------------------------
+		|
+		| Final customer prices that bypass discount, markup and rounding.
+		|
+		| kind
+		|     article | print_price | print_fee
+		|
+		| variation_id
+		|     0 = applies to every variation of the product.
+		|
+		| ref_id
+		|     print option id (print_price) or fee id (print_fee); 0 for article.
+		|
+		| qty
+		|     Tier quantity (article / print_price). 0 for print_fee.
+		|
+		| price (print_fee)
+		|     Selling price per fee unit; the colors / quantity / positions
+		|     multiplier still applies on top.
+		|
+		| origin
+		|     manual = set by an admin; lock = snapshot taken by a product
+		|     lock (removed again on unlock).
+		*/
+
+		$table = self::table(
+			'fixed_prices'
+		);
+
+		$sql = "CREATE TABLE {$table} (
+			id bigint unsigned NOT NULL AUTO_INCREMENT,
+			product_id bigint unsigned NOT NULL,
+			variation_id bigint unsigned NOT NULL DEFAULT 0,
+			kind varchar(20) NOT NULL,
+			ref_id bigint unsigned NOT NULL DEFAULT 0,
+			qty int unsigned NOT NULL DEFAULT 0,
+			price decimal(12,4) NOT NULL DEFAULT 0.0000,
+			origin varchar(10) NOT NULL DEFAULT 'manual',
+			updated_by varchar(100) DEFAULT NULL,
+			created_at datetime DEFAULT CURRENT_TIMESTAMP,
+			updated_at datetime DEFAULT CURRENT_TIMESTAMP,
+			PRIMARY KEY  (id),
+			UNIQUE KEY fixed_price_unique (product_id, variation_id, kind, ref_id, qty),
+			KEY product_idx (product_id)
+		) {$charset};";
+
+		dbDelta( $sql );
+
+
+		/*
+		|--------------------------------------------------------------------------
+		| Price Locks
+		|--------------------------------------------------------------------------
+		*/
+
+		$table = self::table(
+			'price_locks'
+		);
+
+		$sql = "CREATE TABLE {$table} (
+			product_id bigint unsigned NOT NULL,
+			locked_by varchar(100) DEFAULT NULL,
+			note varchar(255) DEFAULT NULL,
+			locked_at datetime DEFAULT CURRENT_TIMESTAMP,
+			PRIMARY KEY  (product_id)
+		) {$charset};";
+
+		dbDelta( $sql );
+
+
+		/*
+		|--------------------------------------------------------------------------
+		| Price History
+		|--------------------------------------------------------------------------
+		|
+		| source
+		|     admin | rest | mcp
+		|
+		| details
+		|     JSON: changes applied, sample old -> new prices.
+		*/
+
+		$table = self::table(
+			'price_history'
+		);
+
+		$sql = "CREATE TABLE {$table} (
+			id bigint unsigned NOT NULL AUTO_INCREMENT,
+			created_at datetime DEFAULT CURRENT_TIMESTAMP,
+			user_id bigint unsigned NOT NULL DEFAULT 0,
+			actor varchar(100) NOT NULL DEFAULT '',
+			source varchar(20) NOT NULL DEFAULT 'admin',
+			action varchar(40) NOT NULL,
+			summary varchar(500) NOT NULL DEFAULT '',
+			affected_count int unsigned NOT NULL DEFAULT 0,
+			details longtext DEFAULT NULL,
+			PRIMARY KEY  (id),
+			KEY created_at_idx (created_at),
+			KEY action_idx (action)
+		) {$charset};";
+
+		dbDelta( $sql );
+
+
+		/*
+		|--------------------------------------------------------------------------
 		| Retired options
 		|--------------------------------------------------------------------------
 		|
@@ -833,6 +991,10 @@ final class Database {
 			'print_relation',
 			'pricing_markup_rules',
 			'supplier_discounts',
+			'pricing_scoped_rules',
+			'fixed_prices',
+			'price_locks',
+			'price_history',
 			'inquiries',
 			'supplier_sources',
 		];

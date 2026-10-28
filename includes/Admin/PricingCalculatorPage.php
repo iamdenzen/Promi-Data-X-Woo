@@ -1227,11 +1227,28 @@ final class PricingCalculatorPage {
 			<td>
 				<?php
 				echo esc_html(
-					$this->percent(
-						$result['article_markup']
-							?? null
-					)
+					! empty( $result['fixed'] )
+						? '—'
+						: $this->percent(
+							$result['article_markup']
+								?? null
+						)
 				);
+
+				if ( ! empty( $result['markup_label'] ) ) {
+					printf(
+						'<br><small class="description">%s</small>',
+						esc_html(
+							! empty( $result['fixed'] )
+								? __( 'Fixed price', 'promi-data-x-woo' )
+								: sprintf(
+									/* translators: %s: rule level, e.g. "Category: USB". */
+									__( 'Applied: %s', 'promi-data-x-woo' ),
+									$result['markup_label']
+								)
+						)
+					);
+				}
 				?>
 			</td>
 
@@ -1302,6 +1319,9 @@ final class PricingCalculatorPage {
 			'recommended_selling_price' =>
 				'case-2',
 
+			'fixed' =>
+				'fixed',
+
 			default =>
 				'unknown',
 		};
@@ -1337,6 +1357,12 @@ final class PricingCalculatorPage {
 			'recommended_selling_price' =>
 				__(
 					'Case 2 — Recommended Selling Price − Manufacturer Discount',
+					'promi-data-x-woo'
+				),
+
+			'fixed' =>
+				__(
+					'Fixed price (no markup or discount)',
 					'promi-data-x-woo'
 				),
 

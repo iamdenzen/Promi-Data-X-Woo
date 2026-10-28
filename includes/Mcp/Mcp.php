@@ -121,6 +121,19 @@ final class Mcp {
 			3
 		);
 
+		// The admin pricing tools need the write scope, which the MCP server
+		// ships disabled. Only admins (manage_options) can approve it.
+		add_filter(
+			'wp_mcp_server_oauth_scopes',
+			static function ( array $scopes ): array {
+
+				$scopes['woocommerce:write'] ??=
+					'Change WooCommerce pricing: markups, fixed prices, locks.';
+
+				return $scopes;
+			}
+		);
+
 		do_action(
 			'pdxw_mcp_init',
 			$this
@@ -159,6 +172,24 @@ final class Mcp {
 		$registry->register(
 			$this->product_variations_print_config_tool
 		);
+
+		// Admin pricing tools (woocommerce:write scope).
+		foreach (
+			[
+				new Tools\ListPricingRulesTool(),
+				new Tools\SetMarkupTool(),
+				new Tools\SetFixedPriceTool( false ),
+				new Tools\SetFixedPriceTool( true ),
+				new Tools\LockProductsTool( true ),
+				new Tools\LockProductsTool( false ),
+				new Tools\PreviewPricingChangesTool(),
+				new Tools\ApplyPricingChangesTool(),
+				new Tools\GetPricingHistoryTool(),
+				new Tools\GetProductPricesTool(),
+			] as $tool
+		) {
+			$registry->register( $tool );
+		}
 	}
 
 

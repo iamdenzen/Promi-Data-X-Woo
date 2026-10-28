@@ -171,25 +171,68 @@ final class CostCalculator {
 		int $quantity = 1
 	): array {
 
-		$product_id =
-			absint(
-				$product_id
+		$product_id   = absint( $product_id );
+		$variation_id = absint( $variation_id );
+		$quantity     = max( 1, absint( $quantity ) );
+
+		/*
+		 * A fixed price is final: no cost lookup, discount, markup,
+		 * rounding or purchase-price guard.
+		 */
+		$fixed =
+			FixedPrices::article(
+				$product_id,
+				$variation_id,
+				$quantity
 			);
 
+		if ( null !== $fixed ) {
 
-		$variation_id =
-			absint(
-				$variation_id
+			return [
+				'status'                => self::STATUS_PRICED,
+				'cost'                  => null,
+				'article_markup'        => 0.0,
+				'article_price'         => (float) $fixed,
+				'source'                => 'fixed',
+				'manufacturer_discount' => 0.0,
+				'discount_source'       => 'none',
+				'tier'                  => null,
+				'markup_level'          => 'fixed',
+				'markup_label'          => 'Fixed price',
+				'markup_target'         => '',
+				'fixed'                 => true,
+			];
+		}
+
+		$rule =
+			$this->rules->resolve_article( $product_id );
+
+		$result =
+			$this->calculate_marked_up(
+				$product_id,
+				$variation_id,
+				$quantity,
+				(float) $rule['percent']
 			);
 
+		$result['markup_level']  = $rule['level'];
+		$result['markup_label']  = $rule['label'];
+		$result['markup_target'] = $rule['target'];
+		$result['fixed']         = false;
 
-		$quantity =
-			max(
-				1,
-				absint(
-					$quantity
-				)
-			);
+		return $result;
+	}
+
+
+	/**
+	 * Cost -> markup calculation for one tier (no fixed-price handling).
+	 */
+	private function calculate_marked_up(
+		int $product_id,
+		int $variation_id,
+		int $quantity,
+		float $article_markup
+	): array {
 
 
 		/*
@@ -204,19 +247,6 @@ final class CostCalculator {
 				$variation_id,
 				$quantity
 			);
-
-
-		/*
-		|--------------------------------------------------------------------------
-		| Resolve article markup
-		|--------------------------------------------------------------------------
-		*/
-
-		$article_markup =
-			$this->rules
-				->article_markup(
-					$product_id
-				);
 
 
 		/*

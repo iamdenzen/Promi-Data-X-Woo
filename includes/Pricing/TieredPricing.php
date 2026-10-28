@@ -1279,6 +1279,23 @@ final class TieredPricing {
 		array $tiers
 	): void {
 
+		// Fixed tiers replace the Promi tier ladder for this variation.
+		$fixed_tiers =
+			FixedPrices::article_tiers(
+				$product_id,
+				$variation_id
+			);
+
+		if ( $fixed_tiers ) {
+
+			$tiers = [];
+
+			foreach ( array_keys( $fixed_tiers ) as $fixed_qty ) {
+				$tiers[] = [ 'qty' => $fixed_qty ];
+			}
+		}
+
+
 		if ( empty( $tiers ) ) {
 			return;
 		}

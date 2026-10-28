@@ -28,6 +28,24 @@ final class MarkupRepository {
 		'print_option_fee';
 
 
+	/**
+	 * In-memory what-if rules used by previews: "type|target_id" => percent,
+	 * or null for a removed rule. Never written to the database.
+	 *
+	 * @var array<string,?float>
+	 */
+	private array $overlay = [];
+
+
+	public function with_overlay( array $overlay ): self {
+
+		$clone          = clone $this;
+		$clone->overlay = $overlay + $this->overlay; // new entries win
+
+		return $clone;
+	}
+
+
 	public function get(
 		string $type,
 		int $target_id
@@ -48,6 +66,14 @@ final class MarkupRepository {
 			|| ! $target_id
 		) {
 			return null;
+		}
+
+		$overlay_key = "{$type}|{$target_id}";
+
+		if ( array_key_exists( $overlay_key, $this->overlay ) ) {
+			return null === $this->overlay[ $overlay_key ]
+				? null
+				: max( 0.0, (float) $this->overlay[ $overlay_key ] );
 		}
 
 		global $wpdb;
@@ -162,6 +188,14 @@ final class MarkupRepository {
 					$now
 				)
 			);
+
+		if ( false !== $result ) {
+			History::record_rule_write(
+				sprintf( '%s markup, target %d: set to %s%%', $type, $target_id, rtrim( rtrim( number_format( $markup_percent, 4, '.', '' ), '0' ), '.' ) ),
+				0,
+				[ 'type' => $type, 'target' => $target_id, 'percent' => $markup_percent ]
+			);
+		}
 
 		return false !== $result;
 	}
@@ -278,6 +312,12 @@ final class MarkupRepository {
 			}
 		}
 
+		History::record_rule_write(
+			sprintf( '%s markup: set to %s%% for %d targets', $type, rtrim( rtrim( number_format( $markup_percent, 4, '.', '' ), '0' ), '.' ), count( $target_ids ) ),
+			0,
+			[ 'type' => $type, 'targets' => array_slice( $target_ids, 0, 200 ), 'percent' => $markup_percent ]
+		);
+
 		return true;
 	}
 
@@ -326,6 +366,14 @@ final class MarkupRepository {
 					'%d',
 				]
 			);
+
+		if ( false !== $result ) {
+			History::record_rule_write(
+				sprintf( '%s markup, target %d: removed', $type, $target_id ),
+				0,
+				[ 'type' => $type, 'target' => $target_id ]
+			);
+		}
 
 		return false !== $result;
 	}

@@ -65,6 +65,15 @@ final class Menu {
 	public const UNMARKED_SLUG =
 		'pdxw-unmarked-products';
 
+	public const RULES_SLUG =
+		'pdxw-pricing-rules';
+
+	public const PRICE_CONTROL_SLUG =
+		'pdxw-price-control';
+
+	public const HISTORY_SLUG =
+		'pdxw-pricing-history';
+
 	public const INQUIRIES_SLUG =
 		'pdxw-inquiries';
 
@@ -507,6 +516,33 @@ final class Menu {
 
 		/*
 		|--------------------------------------------------------------------------
+		| Pricing Rules / Price Control / Pricing History
+		|--------------------------------------------------------------------------
+		*/
+
+		$price_control = new PriceControlPage();
+
+		foreach (
+			[
+				self::RULES_SLUG         => [ __( 'Pricing Rules', 'promi-data-x-woo' ), 'render_rules' ],
+				self::PRICE_CONTROL_SLUG => [ __( 'Price Control', 'promi-data-x-woo' ), 'render_product' ],
+				self::HISTORY_SLUG       => [ __( 'Pricing History', 'promi-data-x-woo' ), 'render_history' ],
+			] as $slug => [ $label, $method ]
+		) {
+			$this->page_hooks[ $slug ] =
+				(string) add_submenu_page(
+					self::ROOT_SLUG,
+					$label,
+					$label,
+					self::CAPABILITY,
+					$slug,
+					[ $price_control, $method ]
+				);
+		}
+
+
+		/*
+		|--------------------------------------------------------------------------
 		| Inquiries
 		|--------------------------------------------------------------------------
 		*/
@@ -652,6 +688,9 @@ final class Menu {
 			self::PRINTING_SLUG,
 			self::MARKUP_SLUG,
 			self::UNMARKED_SLUG,
+			self::RULES_SLUG,
+			self::PRICE_CONTROL_SLUG,
+			self::HISTORY_SLUG,
 			self::INQUIRIES_SLUG,
 			self::SUPPLIERS_SLUG,
 		];

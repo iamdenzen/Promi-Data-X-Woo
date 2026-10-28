@@ -2,6 +2,7 @@
 
 namespace PromiDataXWoo\Printing;
 
+use PromiDataXWoo\Pricing\FixedPrices;
 use PromiDataXWoo\Pricing\Pricing;
 use PromiDataXWoo\Pricing\SellingPriceCalculator;
 
@@ -713,79 +714,27 @@ final class Calculator {
 			|--------------------------------------------------------------------------
 			*/
 
-			$price_markup =
-				$this->pricing
-					->markup_rules()
-					->print_price_markup(
-						$option_id
-					);
-
-			$fee_markup =
-				$this->pricing
-					->markup_rules()
-					->print_fee_markup(
-						$option_id
-					);
-
-
 			/*
-			|--------------------------------------------------------------------------
-			| Raw Purchase Print Tier
-			|--------------------------------------------------------------------------
-			*/
-
-			$purchase_price =
-				$this->repository
-					->get_applicable_purchase_price(
-						$option_id,
-						$quantity
-					);
-
-
-			/*
-			 * Cost basis fallback chain, resolved by
-			 * Repository::get_applicable_purchase_price():
-			 *
-			 *     purchase_price  →  Promi selling price
-			 *
-			 * The print price markup is applied on top of whichever one is
-			 * found. Only when neither exists (or the value is <= 0) is no
-			 * print price charged.
+			 * Unit price: a fixed price wins; otherwise the purchase-cost
+			 * tier (falling back to the Promi selling price, see
+			 * Repository::get_applicable_purchase_price()) plus the print
+			 * price markup of the most specific level.
 			 */
-			if (
-				null !== $purchase_price
-				&& is_numeric(
-					$purchase_price
-				)
-				&& (float) $purchase_price > 0
-			) {
+			$unit =
+				$this->selling_unit_price(
+					$product_id,
+					$variation_id,
+					$option_id,
+					$quantity
+				);
 
-				$purchase_price =
-					(float) $purchase_price;
+			$price_markup =
+				$unit['markup'];
 
-
-				/*
-				 * Ongoing decoration / printing:
-				 *
-				 *     purchase cost
-				 *         ×
-				 *     print price markup
-				 *
-				 * Rounded once to cents (SellingPriceCalculator::ongoing()).
-				 */
-				$customer_unit_price =
-					$this->selling_prices
-						->ongoing(
-							$purchase_price,
-							$price_markup
-						);
+			if ( $unit['price'] > 0 ) {
 
 				$customer_unit_price =
-					max(
-						0.0,
-						(float)
-							$customer_unit_price
-					);
+					$unit['price'];
 
 
 				$unit_print_price +=
@@ -870,59 +819,33 @@ final class Calculator {
 
 
 				/*
-				|--------------------------------------------------------------------------
-				| Setup Fee
-				|--------------------------------------------------------------------------
-				|
-				| Apply the print fee markup, then round up to a whole
-				| euro and on to a price ending in 9.
-				*/
+				 * Setup fees: markup, rounded up to a whole euro and on to a
+				 * price ending in 9. Other fees: markup, rounded to cents.
+				 * A fixed fee price replaces the calculated amount.
+				 */
+				$fee_selling =
+					$this->selling_fee(
+						$type,
+						$raw,
+						(int) ( $fee['id'] ?? 0 ),
+						$product_id,
+						$variation_id,
+						$option_id,
+						(float) ( $fee['base'] ?? 0 )
+					);
 
-				if (
-					'setup'
-					=== $type
-				) {
+				$selling_fee =
+					$fee_selling['amount'];
 
-					$selling_fee =
-						$this->selling_prices
-							->setup(
-								$raw,
-								$fee_markup
-							);
+				$fee_markup =
+					$fee_selling['markup'];
 
-					$selling_fee =
-						max(
-							0.0,
-							(float) $selling_fee
-						);
+				if ( 'setup' === $type ) {
 
 					$setup_total +=
 						$selling_fee;
 
 				} else {
-
-					/*
-					|--------------------------------------------------------------------------
-					| Ongoing / other fee
-					|
-					| Apply the print fee markup.
-					|
-					| Rounded once to cents.
-					*/
-
-					$selling_fee =
-						$this->selling_prices
-							->ongoing(
-								$raw,
-								$fee_markup
-							);
-
-					$selling_fee =
-						max(
-							0.0,
-							(float) $selling_fee
-						);
-
 
 					$ongoing_fee_total +=
 						$selling_fee;
@@ -943,8 +866,17 @@ final class Calculator {
 					'markup' =>
 						(float) $fee_markup,
 
+					'markup_level' =>
+						$fee_selling['level'],
+
+					'markup_label' =>
+						$fee_selling['label'],
+
 					'selling' =>
 						(float) $selling_fee,
+
+					'fee_id' =>
+						(int) ( $fee['id'] ?? 0 ),
 
 					'option_id' =>
 						$option_id,
@@ -1097,55 +1029,13 @@ final class Calculator {
 		}
 
 
-		$price_markup =
-			$this->pricing
-				->markup_rules()
-				->print_price_markup(
-					$option_id
-				);
-
-		$fee_markup =
-			$this->pricing
-				->markup_rules()
-				->print_fee_markup(
-					$option_id
-				);
-
-
-		/*
-		|--------------------------------------------------------------------------
-		| Purchase Print Cost
-		|--------------------------------------------------------------------------
-		*/
-
-		$purchase_price =
-			$this->repository
-				->get_applicable_purchase_price(
-					$option_id,
-					$quantity
-				);
-
-
 		$unit_price =
-			0.0;
-
-
-		if (
-			null !== $purchase_price
-			&& is_numeric(
-				$purchase_price
-			)
-			&& (float) $purchase_price > 0
-		) {
-
-			$unit_price =
-				$this->selling_prices
-					->ongoing(
-						(float)
-							$purchase_price,
-						$price_markup
-					);
-		}
+			$this->selling_unit_price(
+				absint( $context['product_id'] ?? 0 ),
+				absint( $context['variation_id'] ?? 0 ),
+				$option_id,
+				$quantity
+			)['price'];
 
 
 		$print_total =
@@ -1237,27 +1127,16 @@ final class Calculator {
 				);
 
 
-			if (
-				'setup'
-				=== $type
-			) {
-
-				$fee_total +=
-					$this->selling_prices
-						->setup(
-							$raw,
-							$fee_markup
-						);
-
-			} else {
-
-				$fee_total +=
-					$this->selling_prices
-						->ongoing(
-							$raw,
-							$fee_markup
-						);
-			}
+			$fee_total +=
+				$this->selling_fee(
+					$type,
+					$raw,
+					(int) ( $fee['id'] ?? 0 ),
+					$fee_context['product_id'],
+					$fee_context['variation_id'],
+					$option_id,
+					(float) ( $fee['base'] ?? 0 )
+				)['amount'];
 		}
 
 
@@ -1299,46 +1178,198 @@ final class Calculator {
 		int $option_id,
 		float $cost_basis,
 		string $fee_type,
-		string $fee_label = ''
+		string $fee_label = '',
+		int $product_id = 0,
+		int $variation_id = 0,
+		int $fee_id = 0
 	): float {
 
 		if ( $cost_basis <= 0 ) {
 			return 0.0;
 		}
 
-		$fee_markup =
-			$this->pricing
-				->markup_rules()
-				->print_fee_markup(
-					$option_id
-				);
-
-		$type =
+		return $this->selling_fee(
 			$this->fee_type(
 				[
 					'type'  => $fee_type,
 					'label' => $fee_label,
 				]
-			);
+			),
+			$cost_basis,
+			$fee_id,
+			$product_id,
+			$variation_id,
+			$option_id,
+			$cost_basis
+		)['amount'];
+	}
 
-		if ( 'setup' === $type ) {
+	/**
+	 * Whether a fee (by type/label) is a 'setup' fee or an 'ongoing' one.
+	 */
+	public function fee_kind(
+		string $type,
+		string $label = ''
+	): string {
 
-			return max(
-				0.0,
-				(float) $this->selling_prices->setup(
-					$cost_basis,
-					$fee_markup
+		return $this->fee_type(
+			[
+				'type'  => $type,
+				'label' => $label,
+			]
+		);
+	}
+
+
+	/*
+	|--------------------------------------------------------------------------
+	| Fixed price / markup resolution (single source of truth)
+	|--------------------------------------------------------------------------
+	*/
+
+	/**
+	 * Customer unit price of one print option at a quantity.
+	 *
+	 * @return array{price:float,markup:float,level:string,label:string,target:string}
+	 */
+	public function selling_unit_price(
+		int $product_id,
+		int $variation_id,
+		int $option_id,
+		int $quantity
+	): array {
+
+		$fixed =
+			$product_id
+				? FixedPrices::print_price(
+					$product_id,
+					$variation_id,
+					$option_id,
+					$quantity
 				)
-			);
+				: null;
+
+		if ( null !== $fixed ) {
+
+			return [
+				'price'  => max( 0.0, (float) $fixed ),
+				'markup' => 0.0,
+				'level'  => 'fixed',
+				'label'  => 'Fixed price',
+				'target' => '',
+			];
 		}
 
-		return max(
-			0.0,
-			(float) $this->selling_prices->ongoing(
-				$cost_basis,
-				$fee_markup
-			)
-		);
+		$rule =
+			$this->pricing
+				->markup_rules()
+				->resolve_print_price(
+					$option_id,
+					$product_id
+				);
+
+		$purchase_price =
+			$this->repository
+				->get_applicable_purchase_price(
+					$option_id,
+					$quantity
+				);
+
+		$price = 0.0;
+
+		if (
+			null !== $purchase_price
+			&& is_numeric( $purchase_price )
+			&& (float) $purchase_price > 0
+		) {
+
+			$price =
+				max(
+					0.0,
+					(float) $this->selling_prices
+						->ongoing(
+							(float) $purchase_price,
+							$rule['percent']
+						)
+				);
+		}
+
+		return [
+			'price'  => $price,
+			'markup' => $rule['percent'],
+			'level'  => $rule['level'],
+			'label'  => $rule['label'],
+			'target' => $rule['target'],
+		];
+	}
+
+	/**
+	 * Customer amount of one fee.
+	 *
+	 * @return array{amount:float,markup:float,level:string,label:string,fixed:bool}
+	 */
+	public function selling_fee(
+		string $type,
+		float $raw,
+		int $fee_id,
+		int $product_id,
+		int $variation_id,
+		int $option_id,
+		float $base = 0.0
+	): array {
+
+		$fixed =
+			( $product_id && $fee_id )
+				? FixedPrices::print_fee(
+					$product_id,
+					$variation_id,
+					$fee_id
+				)
+				: null;
+
+		if ( null !== $fixed ) {
+
+			// A fixed fee is the selling price per fee unit; the
+			// colors / quantity / positions multiplier still applies.
+			$multiplier =
+				$base > 0
+					? $raw / $base
+					: 1.0;
+
+			return [
+				'amount' => max(
+					0.0,
+					SellingPriceCalculator::round_money(
+						(float) $fixed * $multiplier
+					)
+				),
+				'markup' => 0.0,
+				'level'  => 'fixed',
+				'label'  => 'Fixed price',
+				'fixed'  => true,
+			];
+		}
+
+		$rule =
+			$this->pricing
+				->markup_rules()
+				->resolve_print_fee(
+					$option_id,
+					$product_id
+				);
+
+		$amount =
+			'setup' === $type
+				? $this->selling_prices->setup( $raw, $rule['percent'] )
+				: $this->selling_prices->ongoing( $raw, $rule['percent'] );
+
+		return [
+			'amount' => max( 0.0, (float) $amount ),
+			'markup' => $rule['percent'],
+			'level'  => $rule['level'],
+			'label'  => $rule['label'],
+			'fixed'  => false,
+		];
 	}
 
 
