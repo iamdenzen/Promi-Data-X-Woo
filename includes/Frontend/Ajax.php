@@ -227,7 +227,7 @@ final class Ajax {
 		if ( ! $product_id ) {
 
 			wp_send_json_error(
-				'Invalid product.'
+				'Ungültiges Produkt.'
 			);
 		}
 
@@ -239,7 +239,7 @@ final class Ajax {
 		if ( ! $product ) {
 
 			wp_send_json_error(
-				'Invalid product.'
+				'Ungültiges Produkt.'
 			);
 		}
 
@@ -287,14 +287,14 @@ final class Ajax {
 		if ( ! empty( $data['invalid_combination'] ) ) {
 
 			wp_send_json_error(
-				'This combination is currently unavailable.'
+				'Diese Kombination ist derzeit nicht verfügbar.'
 			);
 		}
 
 		if ( empty( $data ) ) {
 
 			wp_send_json_error(
-				'Invalid product.'
+				'Ungültiges Produkt.'
 			);
 		}
 
@@ -373,7 +373,7 @@ final class Ajax {
 				[
 					'message' =>
 						__(
-							'Invalid product.',
+							'Ungültiges Produkt.',
 							'promi-data-x-woo'
 						),
 				]
@@ -391,7 +391,7 @@ final class Ajax {
 				[
 					'message' =>
 						__(
-							'Invalid product.',
+							'Ungültiges Produkt.',
 							'promi-data-x-woo'
 						),
 				]
@@ -415,7 +415,7 @@ final class Ajax {
 					[
 						'message' =>
 							__(
-								'Please select a product variation.',
+								'Bitte wählen Sie eine Produktvariante aus.',
 								'promi-data-x-woo'
 							),
 					]
@@ -437,7 +437,7 @@ final class Ajax {
 					[
 						'message' =>
 							__(
-								'Invalid product variation.',
+								'Ungültige Produktvariante.',
 								'promi-data-x-woo'
 							),
 					]
@@ -476,7 +476,7 @@ final class Ajax {
 				[
 					'message' =>
 						__(
-							'This product cannot currently be purchased.',
+							'Dieses Produkt kann derzeit nicht gekauft werden.',
 							'promi-data-x-woo'
 						),
 				]
@@ -500,7 +500,7 @@ final class Ajax {
 				[
 					'message' =>
 						__(
-							'This product variation is currently out of stock.',
+							'Diese Produktvariante ist derzeit nicht auf Lager.',
 							'promi-data-x-woo'
 						),
 				]
@@ -608,7 +608,7 @@ final class Ajax {
 				[
 					'message' =>
 						__(
-							'Product could not be added to the cart.',
+							'Das Produkt konnte nicht in den Warenkorb gelegt werden.',
 							'promi-data-x-woo'
 						),
 				]
@@ -770,7 +770,7 @@ final class Ajax {
 			[
 				'message' =>
 					__(
-						'Thank you — your request has been sent. We will get back to you shortly.',
+						'Vielen Dank – Ihre Anfrage wurde gesendet. Wir melden uns in Kürze bei Ihnen.',
 						'promi-data-x-woo'
 					),
 			]
@@ -793,7 +793,7 @@ final class Ajax {
 
 			wp_send_json_success(
 				[
-					'message' => __( 'Thank you — your request has been sent. We will get back to you shortly.', 'promi-data-x-woo' ),
+					'message' => __( 'Vielen Dank – Ihre Anfrage wurde gesendet. Wir melden uns in Kürze bei Ihnen.', 'promi-data-x-woo' ),
 				]
 			);
 		}
@@ -801,7 +801,7 @@ final class Ajax {
 		if ( empty( $_POST['consent'] ) ) {
 
 			wp_send_json_error(
-				[ 'message' => __( 'Please accept the privacy policy.', 'promi-data-x-woo' ) ],
+				[ 'message' => __( 'Bitte akzeptieren Sie die Datenschutzerklärung.', 'promi-data-x-woo' ) ],
 				400
 			);
 		}
@@ -813,7 +813,7 @@ final class Ajax {
 		if ( $count >= 5 ) {
 
 			wp_send_json_error(
-				[ 'message' => __( 'Too many requests. Please try again later.', 'promi-data-x-woo' ) ],
+				[ 'message' => __( 'Zu viele Anfragen. Bitte versuchen Sie es später erneut.', 'promi-data-x-woo' ) ],
 				429
 			);
 		}
@@ -825,7 +825,7 @@ final class Ajax {
 		if ( $cart->is_empty() ) {
 
 			wp_send_json_error(
-				[ 'message' => __( 'Your cart is empty.', 'promi-data-x-woo' ) ],
+				[ 'message' => __( 'Ihr Warenkorb ist leer.', 'promi-data-x-woo' ) ],
 				400
 			);
 		}
@@ -882,7 +882,7 @@ final class Ajax {
 					'%s · %s%s',
 					$option->name,
 					$position->position_label,
-					$colors ? ' (' . $colors . ' ' . __( 'colors', 'promi-data-x-woo' ) . ')' : ''
+					$colors ? ' (' . $colors . ' ' . __( 'Farben','promi-data-x-woo' ) . ')' : ''
 				);
 			}
 
@@ -906,7 +906,7 @@ final class Ajax {
 		if ( ! $items ) {
 
 			wp_send_json_error(
-				[ 'message' => __( 'Your cart is empty.', 'promi-data-x-woo' ) ],
+				[ 'message' => __( 'Ihr Warenkorb ist leer.', 'promi-data-x-woo' ) ],
 				400
 			);
 		}
@@ -942,7 +942,7 @@ final class Ajax {
 
 		wp_send_json_success(
 			[
-				'message' => __( 'Thank you — your request has been sent. We will get back to you shortly.', 'promi-data-x-woo' ),
+				'message' => __( 'Vielen Dank – Ihre Anfrage wurde gesendet. Wir melden uns in Kürze bei Ihnen.', 'promi-data-x-woo' ),
 			]
 		);
 	}
@@ -1004,7 +1004,7 @@ final class Ajax {
 				[
 					'message' =>
 						__(
-							'WooCommerce cart is unavailable.',
+							'Der WooCommerce-Warenkorb ist nicht verfügbar.',
 							'promi-data-x-woo'
 						),
 				]
