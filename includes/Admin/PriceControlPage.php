@@ -312,9 +312,11 @@ window.PDXW={
    else if(k==='class'){e.className=attrs[k];}
    else if(k.slice(0,2)==='on'){e.addEventListener(k.slice(2),attrs[k]);}
    else{e.setAttribute(k,attrs[k]);}});
-  for(var i=2;i<arguments.length;i++){var c=arguments[i];
-   if(c==null||c===false){continue;}
-   e.appendChild(typeof c==='string'?document.createTextNode(c):c);}
+  var add=function(c){
+   if(c==null||c===false){return;}
+   if(Array.isArray(c)){c.forEach(add);return;}
+   e.appendChild(c instanceof Node?c:document.createTextNode(String(c)));};
+  for(var i=2;i<arguments.length;i++){add(arguments[i]);}
   return e;},
  money:function(v){return (v===null||v===undefined||v==='')?'—':Number(v).toFixed(2);},
  pct:function(v){return (v===null||v===undefined)?'—':(Math.round(Number(v)*10000)/10000)+'%';},
