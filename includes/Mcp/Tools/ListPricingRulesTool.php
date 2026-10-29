@@ -28,6 +28,10 @@ final class ListPricingRulesTool extends AbstractPricingTool {
 		return [ 'readOnlyHint' => true ];
 	}
 
+	public function required_scopes(): array {
+		return [ 'woocommerce:read' ];
+	}
+
 	public function execute( array $arguments = [] ): array {
 
 		$this->boot();

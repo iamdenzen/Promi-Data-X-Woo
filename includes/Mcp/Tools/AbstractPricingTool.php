@@ -11,9 +11,10 @@ defined( 'ABSPATH' ) || exit;
  * Base for the admin pricing tools (markups, fixed prices, locks, preview,
  * history).
  *
- * All of them require the woocommerce:write scope. That scope can only be
- * granted on the OAuth authorize screen, which is restricted to users with
- * manage_options, so these tools are admin-only.
+ * The tools that change data require the woocommerce:write scope. That scope
+ * can only be granted on the OAuth authorize screen, which is restricted to
+ * users with manage_options, so those tools are admin-only. The read-only
+ * tools override required_scopes() with woocommerce:read.
  *
  * Only loaded after Mcp::init() has confirmed ToolInterface exists.
  */

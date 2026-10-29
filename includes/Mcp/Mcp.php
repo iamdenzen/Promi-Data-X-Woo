@@ -173,7 +173,8 @@ final class Mcp {
 			$this->product_variations_print_config_tool
 		);
 
-		// Admin pricing tools (woocommerce:write scope).
+		// Admin pricing tools (woocommerce:write scope, except the read-only
+		// ones, which use woocommerce:read).
 		foreach (
 			[
 				new Tools\ListPricingRulesTool(),
