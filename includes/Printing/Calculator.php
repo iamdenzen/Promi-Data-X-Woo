@@ -1306,7 +1306,11 @@ final class Calculator {
 	/**
 	 * Customer amount of one fee.
 	 *
-	 * @return array{amount:float,markup:float,level:string,label:string,fixed:bool}
+	 * `amount` is the final rounded customer amount (setup fees end in 9,
+	 * others are rounded to cents); `amount_unrounded` is the same amount
+	 * before that rounding.
+	 *
+	 * @return array{amount:float,amount_unrounded:float,markup:float,level:string,label:string,fixed:bool}
 	 */
 	public function selling_fee(
 		string $type,
@@ -1343,6 +1347,10 @@ final class Calculator {
 						(float) $fixed * $multiplier
 					)
 				),
+				'amount_unrounded' => max(
+					0.0,
+					(float) $fixed * $multiplier
+				),
 				'markup' => 0.0,
 				'level'  => 'fixed',
 				'label'  => 'Fixed price',
@@ -1365,6 +1373,10 @@ final class Calculator {
 
 		return [
 			'amount' => max( 0.0, (float) $amount ),
+			'amount_unrounded' => max(
+				0.0,
+				$this->selling_prices->unrounded( $raw, $rule['percent'] )
+			),
 			'markup' => $rule['percent'],
 			'level'  => $rule['level'],
 			'label'  => $rule['label'],

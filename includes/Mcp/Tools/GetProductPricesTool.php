@@ -13,7 +13,7 @@ final class GetProductPricesTool extends AbstractPricingTool {
 	}
 
 	public function description(): string {
-		return 'Reads every price of a product variation by variation, with the pricing level that produced each price (default / supplier / category / print_option / product / fixed), the markup percent, cost source, lock state, print unit price tiers and print fees. Returns ALL variations, paged: use offset/limit (limit up to 100) and follow next_offset until has_more is false; total is always returned. include_print=false returns article prices only (much smaller). Admin only.';
+		return 'Reads every price of a product variation by variation, with the pricing level that produced each price (default / supplier / category / print_option / product / fixed), the markup percent, cost source, lock state, print unit price tiers and print fees. Article tiers and print unit price tiers include purchase_price (raw supplier purchase price; null for fixed prices); print fees include purchase_amount plus unit_price_rounded (final customer amount: setup fees end in 9, others rounded to cents) and unit_price_unrounded (same amount before rounding). Returns ALL variations, paged: use offset/limit (limit up to 100) and follow next_offset until has_more is false; total is always returned. include_print=false returns article prices only (much smaller). Admin only.';
 	}
 
 	public function input_schema(): array {

@@ -194,6 +194,24 @@ final class SellingPriceCalculator {
 	}
 
 
+	/**
+	 * Cost × (1 + markup / 100) without any rounding.
+	 *
+	 * For reporting only (e.g. showing a setup fee before its "9" rounding).
+	 * Never use it for a customer-facing price.
+	 */
+	public function unrounded(
+		float $cost,
+		float $markup_percent
+	): float {
+
+		return $this->apply_markup(
+			$cost,
+			$markup_percent
+		);
+	}
+
+
 	/*
 	|--------------------------------------------------------------------------
 	| Money Rounding

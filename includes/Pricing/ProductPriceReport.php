@@ -90,6 +90,15 @@ final class ProductPriceReport {
 
 
 	/**
+	 * @param mixed $value
+	 */
+	private static function nullable_float( $value ): ?float {
+
+		return is_numeric( $value ) ? (float) $value : null;
+	}
+
+
+	/**
 	 * @return array<int,array<string,mixed>>
 	 */
 	private static function article( Pricing $pricing, int $product_id, int $variation_id ): array {
@@ -122,7 +131,8 @@ final class ProductPriceReport {
 				'qty'            => (int) $qty,
 				'price'          => $result['article_price'] ?? null,
 				'status'         => $result['status'] ?? '',
-				'cost'           => $result['cost'] ?? null,
+				'purchase_price' => self::nullable_float( $result['tier']->purchase_price ?? null ),
+					'cost'           => $result['cost'] ?? null,
 				'cost_source'    => $result['source'] ?? null,
 				'discount_percent' => $result['manufacturer_discount'] ?? 0,
 				'markup_percent' => $result['article_markup'] ?? 0,
@@ -196,7 +206,10 @@ final class ProductPriceReport {
 
 					$prices[] = [
 						'qty'            => $qty,
-						'price'          => $unit['price'],
+						'purchase_price' => self::nullable_float(
+								$repository->get_applicable_purchase_price( $option_id, $qty )
+							),
+							'price'          => $unit['price'],
 						'markup_percent' => $unit['markup'],
 						'level'          => $unit['level'],
 						'level_label'    => $unit['label'],
@@ -233,7 +246,10 @@ final class ProductPriceReport {
 						'type'               => $kind,
 						'calculation'        => (string) ( $fee->calculation ?? '' ),
 						'calculation_type'   => (string) ( $fee->calculation_type ?? '' ),
+						'purchase_amount'    => $base,
 						'unit_price'         => $base > 0 || 'fixed' === $selling['level'] ? $selling['amount'] : 0.0,
+						'unit_price_rounded'   => $base > 0 || 'fixed' === $selling['level'] ? $selling['amount'] : 0.0,
+						'unit_price_unrounded' => $base > 0 || 'fixed' === $selling['level'] ? $selling['amount_unrounded'] : 0.0,
 						'markup_percent'     => $selling['markup'],
 						'level'              => $selling['level'],
 						'level_label'        => $selling['label'],
