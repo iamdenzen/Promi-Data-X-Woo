@@ -250,10 +250,11 @@ final class ProductPriceReport {
 						'unit_price'         => $base > 0 || 'fixed' === $selling['level'] ? $selling['amount'] : 0.0,
 						'unit_price_rounded'   => $base > 0 || 'fixed' === $selling['level'] ? $selling['amount'] : 0.0,
 						'unit_price_unrounded' => $base > 0 || 'fixed' === $selling['level'] ? $selling['amount_unrounded'] : 0.0,
-						'markup_percent'     => $selling['markup'],
+						'markup_percent'     => $selling['scoped'] ? null : $selling['markup'],
 						'level'              => $selling['level'],
 						'level_label'        => $selling['label'],
-						'fixed'              => $selling['fixed'],
+						// Only a fixed price on this product can be edited / cleared here.
+						'fixed'              => $selling['fixed'] && ! $selling['scoped'],
 					];
 				}
 

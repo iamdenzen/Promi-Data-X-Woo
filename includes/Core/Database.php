@@ -15,7 +15,7 @@ defined( 'ABSPATH' ) || exit;
  */
 final class Database {
 
-	public const VERSION = '1.6.0';
+	public const VERSION = '1.7.0';
 
 	public const VERSION_OPTION = 'pdxw_db_version';
 
@@ -98,6 +98,9 @@ final class Database {
 
 			'fixed_prices' =>
 				'cx_fixed_prices',
+
+			'scoped_fixed_fees' =>
+				'cx_scoped_fixed_fees',
 
 			'price_locks' =>
 				'cx_price_locks',
@@ -747,6 +750,45 @@ final class Database {
 
 		/*
 		|--------------------------------------------------------------------------
+		| Scoped Fixed Print Fees
+		|--------------------------------------------------------------------------
+		|
+		| One fixed selling price per fee unit for a whole scope instead of a
+		| single product. Bypasses markup and rounding like a fixed price; the
+		| colors / quantity / positions multiplier still applies.
+		|
+		| level
+		|     option          target_key = print option id, e.g. "12"
+		|     supplier        target_key = SKU prefix, e.g. "A34"
+		|     supplier_option target_key = prefix + option id, e.g. "A34:12"
+		|
+		| fee_kind
+		|     setup | ongoing
+		*/
+
+		$table = self::table(
+			'scoped_fixed_fees'
+		);
+
+		$sql = "CREATE TABLE {$table} (
+			id bigint unsigned NOT NULL AUTO_INCREMENT,
+			level varchar(20) NOT NULL,
+			target_key varchar(100) NOT NULL,
+			fee_kind varchar(10) NOT NULL,
+			price decimal(12,4) NOT NULL DEFAULT 0.0000,
+			updated_by varchar(100) DEFAULT NULL,
+			created_at datetime DEFAULT CURRENT_TIMESTAMP,
+			updated_at datetime DEFAULT CURRENT_TIMESTAMP,
+			PRIMARY KEY  (id),
+			UNIQUE KEY scoped_fixed_fee_unique (level, target_key, fee_kind),
+			KEY level_idx (level)
+		) {$charset};";
+
+		dbDelta( $sql );
+
+
+		/*
+		|--------------------------------------------------------------------------
 		| Price Locks
 		|--------------------------------------------------------------------------
 		*/
@@ -993,6 +1035,7 @@ final class Database {
 			'supplier_discounts',
 			'pricing_scoped_rules',
 			'fixed_prices',
+			'scoped_fixed_fees',
 			'price_locks',
 			'price_history',
 			'inquiries',

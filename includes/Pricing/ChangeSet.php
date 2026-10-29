@@ -18,6 +18,10 @@ defined( 'ABSPATH' ) || exit;
  *                price null removes the fixed price (qty omitted removes the
  *                whole ladder of that kind / ref).
  *   lock         { type, product_id, locked: bool }
+ *   fixed_fee_rule { type, level, target?, fee_kind, price|null }
+ *                level option | supplier | supplier_option; target is the
+ *                option id, the SKU prefix or "A34:12". price null removes it.
+ *                Print fees are calculated live, so nothing is repriced.
  *
  * preview() validates, measures the effect without writing anything and
  * returns a token. apply( token ) executes exactly what was previewed,
@@ -96,6 +100,8 @@ final class ChangeSet {
 			} elseif ( 'fixed_price' === $change['type'] ) {
 				$entry += self::preview_fixed( $pricing, $change, $locked );
 				$union[ $change['product_id'] ] = true;
+			} elseif ( 'fixed_fee_rule' === $change['type'] ) {
+				$entry += self::preview_fee_rule( $pricing, $change, $locked, $union );
 			} else {
 				$entry += [
 					'affected_count' => 1,
@@ -269,6 +275,19 @@ final class ChangeSet {
 				$summary[]     = self::describe_fixed( $change );
 				$reprice_ids[] = (int) $change['product_id'];
 
+			} elseif ( 'fixed_fee_rule' === $change['type'] ) {
+
+				$old = ScopedFixedFees::get( $change['level'], $change['target'], $change['fee_kind'] );
+
+				if ( null === $change['price'] ) {
+					ScopedFixedFees::delete( $change['level'], $change['target'], $change['fee_kind'] );
+				} else {
+					ScopedFixedFees::save( $change['level'], $change['target'], $change['fee_kind'], (float) $change['price'], History::actor() );
+				}
+
+				$applied[] = $change + [ 'old_price' => $old ];
+				$summary[] = self::describe_fee_rule( $change, $old );
+
 			} else {
 
 				if ( $change['locked'] ) {
@@ -354,6 +373,10 @@ final class ChangeSet {
 			return self::normalize_fixed( $change );
 		}
 
+		if ( 'fixed_fee_rule' === $type ) {
+			return self::normalize_fee_rule( $change );
+		}
+
 		if ( 'lock' === $type ) {
 
 			$product_id = PriceLocks::parent_id( (int) ( $change['product_id'] ?? 0 ) );
@@ -369,7 +392,64 @@ final class ChangeSet {
 			];
 		}
 
-		return new \WP_Error( 'pdxw_bad_type', 'type must be markup, fixed_price or lock.' );
+		return new \WP_Error( 'pdxw_bad_type', 'type must be markup, fixed_price, fixed_fee_rule or lock.' );
+	}
+
+	private static function normalize_fee_rule( array $change ) {
+
+		$level = (string) ( $change['level'] ?? '' );
+
+		if ( ! in_array( $level, ScopedFixedFees::levels(), true ) ) {
+			return new \WP_Error( 'pdxw_bad_level', 'level must be one of: ' . implode( ', ', ScopedFixedFees::levels() ) . '.' );
+		}
+
+		$fee_kind = (string) ( $change['fee_kind'] ?? '' );
+
+		if ( ! in_array( $fee_kind, ScopedFixedFees::kinds(), true ) ) {
+			return new \WP_Error( 'pdxw_bad_fee_kind', 'fee_kind must be setup or ongoing.' );
+		}
+
+		$target = trim( (string) ( $change['target'] ?? '' ) );
+
+		// Supplier + option may be given as separate fields.
+		if (
+			ScopedFixedFees::LEVEL_SUPPLIER_OPTION === $level
+			&& '' === $target
+			&& isset( $change['supplier'], $change['option_id'] )
+		) {
+			$target = trim( (string) $change['supplier'] ) . ':' . trim( (string) $change['option_id'] );
+		}
+
+		$target = ScopedFixedFees::normalize_key( $level, $target );
+
+		if ( '' === $target ) {
+			return new \WP_Error(
+				'pdxw_bad_target',
+				'target must be a print option id (option), a SKU prefix such as "A34" (supplier) or "A34:12" (supplier_option).'
+			);
+		}
+
+		$price = $change['price'] ?? null;
+
+		if ( null !== $price && '' !== $price ) {
+
+			if ( ! is_numeric( $price ) || (float) $price < 0 ) {
+				return new \WP_Error( 'pdxw_bad_price', 'price must be a number >= 0.' );
+			}
+
+			$price = round( (float) $price, 4 );
+
+		} else {
+			$price = null;
+		}
+
+		return [
+			'type'     => 'fixed_fee_rule',
+			'level'    => $level,
+			'target'   => $target,
+			'fee_kind' => $fee_kind,
+			'price'    => $price,
+		];
 	}
 
 	private static function normalize_markup( array $change ) {
@@ -1019,6 +1099,185 @@ final class ChangeSet {
 	}
 
 	/**
+	 * Products whose print fee changes when a scoped fixed fee rule changes.
+	 *
+	 * @param array<int,bool> $locked
+	 * @param array<int,bool> $union  product ids affected by the whole set
+	 * @return array<string,mixed>
+	 */
+	private static function preview_fee_rule( Pricing $pricing, array $c, array $locked, array &$union ): array {
+
+		global $wpdb;
+
+		$relation = Database::table( 'print_relation' );
+		$printing = Plugin::instance()->printing();
+		$scoped   = $pricing->markup_rules()->scoped();
+		$kind     = $c['fee_kind'];
+		$old_rule = ScopedFixedFees::get( $c['level'], $c['target'], $kind );
+		$overlay  = [ "{$c['level']}|{$c['target']}|{$kind}" => $c['price'] ];
+
+		$option_filter = 0;
+		$ids           = [];
+
+		switch ( $c['level'] ) {
+
+			case ScopedFixedFees::LEVEL_OPTION:
+				$option_filter = (int) $c['target'];
+				$ids           = $wpdb->get_col(
+					$wpdb->prepare( "SELECT DISTINCT product_id FROM {$relation} WHERE print_option_id = %d", $option_filter )
+				);
+				break;
+
+			case ScopedFixedFees::LEVEL_SUPPLIER_OPTION:
+				[ $prefix, $option ] = explode( ':', $c['target'], 2 );
+				$option_filter       = (int) $option;
+				$ids                 = array_intersect(
+					$scoped->products_for_prefix( $prefix ),
+					array_map(
+						'absint',
+						$wpdb->get_col(
+							$wpdb->prepare( "SELECT DISTINCT product_id FROM {$relation} WHERE print_option_id = %d", $option_filter )
+						) ?: []
+					)
+				);
+				break;
+
+			default:
+				$ids = $scoped->products_for_prefix( $c['target'] );
+		}
+
+		$ids       = array_values( array_unique( array_filter( array_map( 'absint', $ids ?: [] ) ) ) );
+		$truncated = count( $ids ) > self::CANDIDATE_CAP;
+
+		if ( $truncated ) {
+			$ids = array_slice( $ids, 0, self::CANDIDATE_CAP );
+		}
+
+		$options = [];
+
+		if ( $ids && ! $option_filter ) {
+
+			$placeholders = implode( ',', array_fill( 0, count( $ids ), '%d' ) );
+
+			$rows = $wpdb->get_results(
+				$wpdb->prepare(
+					"SELECT DISTINCT product_id, print_option_id FROM {$relation} WHERE product_id IN ({$placeholders})",
+					$ids
+				),
+				ARRAY_A
+			);
+
+			foreach ( is_array( $rows ) ? $rows : [] as $row ) {
+				$options[ (int) $row['product_id'] ][] = (int) $row['print_option_id'];
+			}
+		}
+
+		$affected       = 0;
+		$locked_skipped = 0;
+		$fixed_skipped  = 0;
+		$samples        = [];
+		$repository     = $printing ? $printing->repository() : null;
+		$calculator     = $printing ? $printing->calculator() : null;
+		$prices         = $pricing->selling_prices();
+		$old_markup     = $pricing->markup_rules();
+
+		foreach ( $ids as $product_id ) {
+
+			$sku = (string) get_post_meta( $product_id, '_sku', true );
+
+			foreach ( $option_filter ? [ $option_filter ] : ( $options[ $product_id ] ?? [] ) as $option_id ) {
+
+				$old = ScopedFixedFees::match( $kind, $option_id, $sku );
+				$new = ScopedFixedFees::match( $kind, $option_id, $sku, $overlay );
+
+				if (
+					( $old['price'] ?? null ) === ( $new['price'] ?? null )
+					&& ( $old['level'] ?? '' ) === ( $new['level'] ?? '' )
+				) {
+					continue;
+				}
+
+				// Only fees of the rule's kind are touched.
+				$fees = [];
+
+				if ( $repository && $calculator ) {
+					foreach ( $repository->get_fees( $option_id ) as $fee ) {
+						if ( $calculator->fee_kind( (string) $fee->fee_type, (string) $fee->fee_label ) === $kind ) {
+							$fees[] = $fee;
+						}
+					}
+				}
+
+				if ( ! $fees ) {
+					continue;
+				}
+
+				if ( isset( $locked[ $product_id ] ) ) {
+					++$locked_skipped;
+					break;
+				}
+
+				$own = array_filter(
+					$fees,
+					static fn( $fee ) => null !== FixedPrices::print_fee( $product_id, 0, (int) ( $fee->id ?? 0 ) )
+				);
+
+				if ( count( $own ) === count( $fees ) ) {
+					++$fixed_skipped;
+					break;
+				}
+
+				++$affected;
+				$union[ $product_id ] = true;
+
+				if ( count( $samples ) < self::SAMPLE_LIMIT ) {
+
+					$fee  = reset( $fees );
+					$cost = isset( $fee->purchase_amount ) && is_numeric( $fee->purchase_amount )
+						? (float) $fee->purchase_amount
+						: (float) ( $fee->amount ?? 0 );
+
+					$rule  = $old_markup->resolve_print_fee( $option_id, $product_id );
+					$price = static function ( ?array $match ) use ( $prices, $kind, $cost, $rule ): float {
+						if ( $match ) {
+							return SellingPriceCalculator::round_money( (float) $match['price'] );
+						}
+						return 'setup' === $kind
+							? $prices->setup( $cost, $rule['percent'] )
+							: $prices->ongoing( $cost, $rule['percent'] );
+					};
+
+					$samples[] = [
+						'product_id' => $product_id,
+						'sku'        => $sku,
+						'name'       => get_the_title( $product_id ),
+						'part'       => 'print_fee',
+						'option_id'  => $option_id,
+						'fee_label'  => (string) $fee->fee_label,
+						'old_price'  => $price( $old ),
+						'new_price'  => $price( $new ),
+						'old_level'  => $old ? 'fixed' : $rule['level'],
+						'new_level'  => $new ? 'fixed' : $rule['level'],
+					];
+				}
+
+				break; // one hit per product is enough
+			}
+		}
+
+		return [
+			'description'    => self::describe_fee_rule( $c, $old_rule ),
+			'old_price'      => $old_rule,
+			'new_price'      => $c['price'],
+			'affected_count' => $affected,
+			'locked_skipped' => $locked_skipped,
+			'fixed_skipped'  => $fixed_skipped,
+			'truncated'      => $truncated,
+			'samples'        => $samples,
+		];
+	}
+
+	/**
 	 * Old -> new for the single product a fixed-price change targets.
 	 *
 	 * @param array<int,bool> $locked
@@ -1094,6 +1353,29 @@ final class ChangeSet {
 			$where,
 			$old_text,
 			rtrim( rtrim( number_format( (float) $c['percent'], 4, '.', '' ), '0' ), '.' )
+		);
+	}
+
+	private static function describe_fee_rule( array $c, ?float $old ): string {
+
+		$where = match ( $c['level'] ) {
+			ScopedFixedFees::LEVEL_OPTION   => 'print option #' . $c['target'],
+			ScopedFixedFees::LEVEL_SUPPLIER => 'supplier ' . $c['target'],
+			default                         => 'supplier ' . strtok( $c['target'], ':' ) . ' + print option #' . substr( strrchr( $c['target'], ':' ), 1 ),
+		};
+
+		$old_text = null === $old ? 'none' : rtrim( rtrim( number_format( $old, 4, '.', '' ), '0' ), '.' );
+
+		if ( null === $c['price'] ) {
+			return sprintf( 'Fixed %s fee, %s: removed (was %s)', $c['fee_kind'], $where, $old_text );
+		}
+
+		return sprintf(
+			'Fixed %s fee, %s: %s -> %s',
+			$c['fee_kind'],
+			$where,
+			$old_text,
+			rtrim( rtrim( number_format( (float) $c['price'], 4, '.', '' ), '0' ), '.' )
 		);
 	}
 

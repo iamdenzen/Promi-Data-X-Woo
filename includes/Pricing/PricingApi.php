@@ -260,6 +260,8 @@ final class PricingApi {
 				'total'  => count( FixedPrices::list( 0, 100000 ) ),
 				'sample' => FixedPrices::list( 0, 20 ),
 			],
+			// Fixed print fees for a print option / supplier / both.
+			'fixed_fees'   => ScopedFixedFees::all(),
 			'locks'        => [
 				'total'  => PriceLocks::count(),
 				'sample' => PriceLocks::all( 20 ),
@@ -267,7 +269,7 @@ final class PricingApi {
 			'resolution'   => [
 				'article'     => 'fixed price > product > supplier + category > supplier (SKU prefix) > category (deepest) > default',
 				'print_price' => 'fixed price > print_option > supplier + category > supplier (SKU prefix) > category (deepest) > default',
-				'print_fee'   => 'fixed price > print_option > supplier + category > supplier (SKU prefix) > category (deepest) > default',
+				'print_fee'   => 'fixed price on the product > fixed fee rule (supplier + print option > print option > supplier) > print_option markup > supplier + category > supplier (SKU prefix) > category (deepest) > default',
 				'note'        => 'Supplier + category is one markup for a supplier prefix AND a category together (level supplier_category, target "A34:12"); it is not the sum of the two.',
 				'fixed'       => 'Fixed prices bypass discount, markup and rounding; locks freeze current prices as fixed prices.',
 			],

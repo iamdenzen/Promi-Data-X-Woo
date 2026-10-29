@@ -3,6 +3,7 @@
 namespace PromiDataXWoo\Printing;
 
 use PromiDataXWoo\Pricing\FixedPrices;
+use PromiDataXWoo\Pricing\ScopedFixedFees;
 use PromiDataXWoo\Pricing\Pricing;
 use PromiDataXWoo\Pricing\SellingPriceCalculator;
 
@@ -1310,7 +1311,10 @@ final class Calculator {
 	 * others are rounded to cents); `amount_unrounded` is the same amount
 	 * before that rounding.
 	 *
-	 * @return array{amount:float,amount_unrounded:float,markup:float,level:string,label:string,fixed:bool}
+	 * `scoped` is true when the fixed fee comes from a print option / supplier
+	 * rule rather than a fixed price on the product itself.
+	 *
+	 * @return array{amount:float,amount_unrounded:float,markup:float,level:string,label:string,fixed:bool,scoped:bool}
 	 */
 	public function selling_fee(
 		string $type,
@@ -1330,6 +1334,26 @@ final class Calculator {
 					$fee_id
 				)
 				: null;
+
+		$fixed_label = 'Fixed price';
+		$scoped      = false;
+
+		// Fixed fee for a print option / supplier / both (no per-product row).
+		if ( null === $fixed && $product_id ) {
+
+			$scoped_rule =
+				ScopedFixedFees::match(
+					'setup' === $type ? 'setup' : 'ongoing',
+					$option_id,
+					(string) get_post_meta( $product_id, '_sku', true )
+				);
+
+			if ( $scoped_rule ) {
+				$fixed       = $scoped_rule['price'];
+				$fixed_label = $scoped_rule['label'];
+				$scoped      = true;
+			}
+		}
 
 		if ( null !== $fixed ) {
 
@@ -1353,8 +1377,9 @@ final class Calculator {
 				),
 				'markup' => 0.0,
 				'level'  => 'fixed',
-				'label'  => 'Fixed price',
+				'label'  => $fixed_label,
 				'fixed'  => true,
+				'scoped' => $scoped,
 			];
 		}
 
@@ -1381,6 +1406,7 @@ final class Calculator {
 			'level'  => $rule['level'],
 			'label'  => $rule['label'],
 			'fixed'  => false,
+			'scoped' => false,
 		];
 	}
 

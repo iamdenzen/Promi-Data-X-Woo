@@ -89,6 +89,34 @@ final class PriceControlPage {
 		</div>
 		<p class="description" id="pdxw-f-hint"></p>
 
+		<h2><?php echo esc_html__( 'Change a fixed print fee', 'promi-data-x-woo' ); ?></h2>
+		<p class="description">
+			<?php echo esc_html__( 'A fixed amount per fee unit for a print option, a supplier (SKU prefix) or a supplier together with a print option. It replaces the marked-up fee: no markup or rounding is applied, the colors / quantity / positions multiplier still does. A fixed price on the product itself wins. Priority: supplier + print option > print option > supplier.', 'promi-data-x-woo' ); ?>
+		</p>
+		<div class="pdxw-pc-form">
+			<label>Applies to
+				<select id="pdxw-x-level">
+					<option value="option">Print option</option>
+					<option value="supplier">Supplier (SKU prefix)</option>
+					<option value="supplier_option">Supplier + print option</option>
+				</select>
+			</label>
+			<label>Target
+				<span id="pdxw-x-target-slot"></span>
+			</label>
+			<label>Fee type
+				<select id="pdxw-x-kind">
+					<option value="setup">Setup fee</option>
+					<option value="ongoing">Ongoing fee</option>
+				</select>
+			</label>
+			<label>Fixed price
+				<input type="number" id="pdxw-x-price" min="0" step="0.01" style="width:100px">
+			</label>
+			<button type="button" class="button" id="pdxw-x-add">Add to change list</button>
+			<button type="button" class="button" id="pdxw-x-remove">Remove this rule</button>
+		</div>
+
 		<h2><?php echo esc_html__( 'Pending changes', 'promi-data-x-woo' ); ?></h2>
 		<div id="pdxw-pending"><em>No pending changes.</em></div>
 		<p>
@@ -356,7 +384,7 @@ JS;
 (function(){
 var E=PDXW.el,root=document.getElementById('pdxw-pc');
 var cats=JSON.parse(root.dataset.categories||'[]');
-var rules=[],pending=[],token=null;
+var rules=[],fixedFees=[],pending=[],token=null;
 var $=function(id){return document.getElementById(id);};
 
 function msg(t,cls){var m=$('pdxw-msg');m.textContent=t||'';m.className=cls||'';}
@@ -384,8 +412,65 @@ function renderRules(d){
   box.appendChild(E('table',{class:'widefat striped',style:'max-width:760px'},
    E('thead',{},E('tr',{},E('th',{text:'Level'}),E('th',{text:'Applies to'}),E('th',{text:'Markup',class:'pdxw-num'}),E('th',{text:''}))),tb));
  });
+ fixedFees=d.fixed_fees||[];
+ box.appendChild(E('h3',{text:'Fixed print fees'}));
+ if(!fixedFees.length){box.appendChild(E('p',{class:'pdxw-muted',text:'No fixed print fee rules.'}));}
+ else{
+  var ftb=E('tbody');
+  fixedFees.forEach(function(r){
+   ftb.appendChild(E('tr',{},
+    E('td',{},PDXW.badge('product',FEE_LEVELS[r.level]||r.level)),
+    E('td',{text:feeWhere(r.level,r.target_key)}),
+    E('td',{text:r.fee_kind==='setup'?'Setup fee':'Ongoing fee'}),
+    E('td',{class:'pdxw-num',text:PDXW.money(r.price)}),
+    E('td',{},E('a',{href:'#',text:'Edit',onclick:function(ev){ev.preventDefault();fillFee(r);}}))));
+  });
+  box.appendChild(E('table',{class:'widefat striped',style:'max-width:760px'},
+   E('thead',{},E('tr',{},E('th',{text:'Level'}),E('th',{text:'Applies to'}),E('th',{text:'Fee'}),E('th',{text:'Fixed price',class:'pdxw-num'}),E('th',{text:''}))),ftb));
+ }
  var s='Fixed prices: '+(d.fixed_prices?d.fixed_prices.total:0)+' · Locked products: '+(d.locks?d.locks.total:0)+'. ';
- box.appendChild(E('p',{class:'pdxw-muted',text:s+'Priority after fixed prices. Article: product > supplier + category > supplier > category > default. Print price and print fees: print option > supplier + category > supplier > category > default.'}));
+ box.appendChild(E('p',{class:'pdxw-muted',text:s+'Priority after fixed prices. Article: product > supplier + category > supplier > category > default. Print price: print option > supplier + category > supplier > category > default. Print fees: fixed fee rule (supplier + print option > print option > supplier) > print option markup > supplier + category > supplier > category > default.'}));
+}
+
+var FEE_LEVELS={option:'Print option',supplier:'Supplier',supplier_option:'Supplier + print option'};
+function feeWhere(level,key){
+ var a=String(key).split(':');
+ if(level==='option'){return 'option #'+key;}
+ if(level==='supplier'){return 'supplier '+key;}
+ return 'supplier '+a[0]+' + option #'+a[1];
+}
+function refreshFeeTarget(){
+ var level=$('pdxw-x-level').value,slot=$('pdxw-x-target-slot');PDXW.clear(slot);
+ if(level!=='supplier'){slot.appendChild(E('input',{type:'text',id:'pdxw-x-opt',style:'width:90px',placeholder:'option ID'}));}
+ if(level==='supplier_option'){slot.appendChild(document.createTextNode(' + '));}
+ if(level!=='option'){slot.appendChild(E('input',{type:'text',id:'pdxw-x-sup',style:'width:90px',placeholder:'A34'}));}
+}
+function getFeeTarget(level){
+ var o=$('pdxw-x-opt'),s=$('pdxw-x-sup');
+ if(level==='option'){return o?o.value.trim():'';}
+ if(level==='supplier'){return s?s.value.trim().toUpperCase():'';}
+ return (s&&o&&s.value.trim()&&o.value.trim())?(s.value.trim().toUpperCase()+':'+o.value.trim()):'';
+}
+function fillFee(r){
+ $('pdxw-x-level').value=r.level;refreshFeeTarget();
+ var a=String(r.target_key).split(':');
+ if(r.level==='option'&&$('pdxw-x-opt')){$('pdxw-x-opt').value=r.target_key;}
+ if(r.level==='supplier'&&$('pdxw-x-sup')){$('pdxw-x-sup').value=r.target_key;}
+ if(r.level==='supplier_option'){$('pdxw-x-sup').value=a[0]||'';$('pdxw-x-opt').value=a[1]||'';}
+ $('pdxw-x-kind').value=r.fee_kind;$('pdxw-x-price').value=r.price;
+ window.scrollTo({top:$('pdxw-x-level').getBoundingClientRect().top+window.scrollY-120,behavior:'smooth'});
+}
+function queueFee(remove){
+ var level=$('pdxw-x-level').value;
+ var change={type:'fixed_fee_rule',level:level,target:getFeeTarget(level),fee_kind:$('pdxw-x-kind').value,price:null};
+ if(!change.target){msg('Enter the target.','pdxw-err');return;}
+ if(!remove){
+  var p=$('pdxw-x-price').value;
+  if(p===''){msg('Enter a fixed price.','pdxw-err');return;}
+  change.price=parseFloat(p);
+ }
+ pending=pending.filter(function(c){return !(c.type==='fixed_fee_rule'&&c.level===change.level&&c.target===change.target&&c.fee_kind===change.fee_kind);});
+ pending.push(change);msg('');renderPending();
 }
 
 function levelsFor(part){
@@ -460,6 +545,7 @@ function queue(remove){
  pending.push(change);msg('');renderPending();
 }
 function describe(c){
+ if(c.type==='fixed_fee_rule'){return 'Fixed '+(c.fee_kind==='setup'?'setup':'ongoing')+' fee · '+feeWhere(c.level,c.target)+' → '+(c.price===null?'remove rule':PDXW.money(c.price));}
  var where=c.level==='default'?'default':(PDXW.LEVELS[c.level]+' '+c.target);
  if(c.level==='supplier_category'){var sc=String(c.target).split(':');var fc=cats.filter(function(x){return String(x.id)===sc[1];})[0];where='supplier '+sc[0]+' + category '+(fc?fc.name.replace(/^[— ]+/,''):sc[1]);}
  if(c.level==='category'){var f=cats.filter(function(x){return String(x.id)===String(c.target);})[0];if(f){where='category '+f.name.replace(/^[— ]+/,'');}}
@@ -505,6 +591,9 @@ $('pdxw-f-part').addEventListener('change',refreshLevels);
 $('pdxw-f-level').addEventListener('change',refreshTarget);
 $('pdxw-f-add').addEventListener('click',function(){queue(false);});
 $('pdxw-f-remove').addEventListener('click',function(){queue(true);});
+$('pdxw-x-level').addEventListener('change',refreshFeeTarget);
+$('pdxw-x-add').addEventListener('click',function(){queueFee(false);});
+$('pdxw-x-remove').addEventListener('click',function(){queueFee(true);});
 $('pdxw-clear-btn').addEventListener('click',function(){pending=[];renderPending();});
 $('pdxw-preview-btn').addEventListener('click',function(){
  msg('Calculating preview…');$('pdxw-preview-btn').disabled=true;
@@ -523,7 +612,7 @@ $('pdxw-apply-btn').addEventListener('click',function(){
  .then(function(){$('pdxw-apply-btn').disabled=false;});
 });
 
-refreshLevels();renderPending();loadRules();
+refreshLevels();refreshFeeTarget();renderPending();loadRules();
 })();
 JS;
 	}
