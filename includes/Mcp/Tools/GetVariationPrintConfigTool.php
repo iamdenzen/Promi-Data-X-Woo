@@ -16,8 +16,10 @@ defined( 'ABSPATH' ) || exit;
  * parent product, so both product_id and variation_id are required.
  *
  * Reuses Printing\Configurator::get_config(), the same source the product
- * page and configurator UI render from, so prices and fees are already run
- * through the real markup pipeline rather than Promi's raw figures.
+ * page and configurator UI render from, so selling prices and fees are
+ * already run through the real markup pipeline rather than Promi's raw
+ * figures. Purchase cost (purchase_price / purchase_amount) is added on top
+ * via the opt-in include_cost flag, which public callers never set.
  *
  * This class is only ever loaded once Mcp::init() has confirmed
  * \WP_MCP_Server\Tools\Contracts\ToolInterface exists, so the "implements"
@@ -39,7 +41,7 @@ final class GetVariationPrintConfigTool implements ToolInterface {
 
 
 	public function description(): string {
-		return 'Gets available print positions, decoration options, and their calculated selling prices and fees for exactly one WooCommerce product variation. Both product_id AND variation_id are REQUIRED — this store defines print configuration per variation, not on the parent product, so there is no product-level configuration to fall back to. If you do not already know the variation_id, call pdxw_get_product_variations_print_config first to list every variation of the product with its ID.';
+		return 'Gets available print positions, decoration options, and their calculated selling prices and fees for exactly one WooCommerce product variation. Each price tier also carries purchase_price (cost) and each fee purchase_amount (cost, null when none is stored). Both product_id AND variation_id are REQUIRED — this store defines print configuration per variation, not on the parent product, so there is no product-level configuration to fall back to. If you do not already know the variation_id, call pdxw_get_product_variations_print_config first to list every variation of the product with its ID.';
 	}
 
 
@@ -158,7 +160,8 @@ final class GetVariationPrintConfigTool implements ToolInterface {
 			->configurator()
 			->get_config(
 				$product_id,
-				$variation_id
+				$variation_id,
+				[ 'include_cost' => true ]
 			);
 	}
 

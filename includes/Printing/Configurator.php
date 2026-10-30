@@ -45,14 +45,22 @@ final class Configurator {
 	 * Variation-specific positions are preferred.
 	 * If no variation-specific configuration exists, parent positions
 	 * can be returned as a fallback.
+	 *
+	 * Supported $args:
+	 *
+	 * - include_cost (bool, default false): also return purchase-side
+	 *   figures (`purchase_price` per price tier, `purchase_amount` per
+	 *   fee). Never enable this for customer-facing output.
 	 */
 	public function get_config(
 		int $product_id,
-		int $variation_id = 0
+		int $variation_id = 0,
+		array $args = []
 	): array {
 
 		$product_id   = absint( $product_id );
 		$variation_id = absint( $variation_id );
+		$include_cost = ! empty( $args['include_cost'] );
 
 		if ( ! $product_id ) {
 			return [];
@@ -116,7 +124,8 @@ final class Configurator {
 				$position,
 				$options,
 				$product_id,
-				$variation_id
+				$variation_id,
+				$include_cost
 			);
 		}
 
@@ -397,7 +406,8 @@ final class Configurator {
 		object $position,
 		array $options,
 		int $product_id = 0,
-		int $variation_id = 0
+		int $variation_id = 0,
+		bool $include_cost = false
 	): array {
 
 		$prepared_options = [];
@@ -407,7 +417,8 @@ final class Configurator {
 				$this->prepare_option(
 					$option,
 					$product_id,
-					$variation_id
+					$variation_id,
+					$include_cost
 				);
 		}
 
@@ -453,7 +464,8 @@ final class Configurator {
 	private function prepare_option(
 		object $option,
 		int $product_id = 0,
-		int $variation_id = 0
+		int $variation_id = 0,
+		bool $include_cost = false
 	): array {
 
 		$option_id = (int)
@@ -502,7 +514,8 @@ final class Configurator {
 					$option_id,
 					$prices,
 					$product_id,
-					$variation_id
+					$variation_id,
+					$include_cost
 				),
 
 			'fees' =>
@@ -510,7 +523,8 @@ final class Configurator {
 					$option_id,
 					$fees,
 					$product_id,
-					$variation_id
+					$variation_id,
+					$include_cost
 				),
 		];
 	}
@@ -520,7 +534,8 @@ final class Configurator {
 		int $option_id,
 		array $prices,
 		int $product_id = 0,
-		int $variation_id = 0
+		int $variation_id = 0,
+		bool $include_cost = false
 	): array {
 
 		$result = [];
@@ -559,7 +574,7 @@ final class Configurator {
 						]
 					);
 
-			$result[] = [
+			$entry = [
 				'quantity' =>
 					$quantity,
 
@@ -569,6 +584,23 @@ final class Configurator {
 							?? 0.0
 					),
 			];
+
+			if ( $include_cost ) {
+
+				$purchase_price =
+					$this->repository
+						->get_applicable_purchase_price(
+							$option_id,
+							$quantity
+						);
+
+				$entry['purchase_price'] =
+					null !== $purchase_price
+						? (float) $purchase_price
+						: null;
+			}
+
+			$result[] = $entry;
 		}
 
 		return $result;
@@ -579,7 +611,8 @@ final class Configurator {
 		int $option_id,
 		array $fees,
 		int $product_id = 0,
-		int $variation_id = 0
+		int $variation_id = 0,
+		bool $include_cost = false
 	): array {
 
 		$result = [];
@@ -649,7 +682,7 @@ final class Configurator {
 						(int) ( $fee->id ?? 0 )
 					);
 
-			$result[] = [
+			$entry = [
 				'label' =>
 					(string)
 						$fee
@@ -681,6 +714,16 @@ final class Configurator {
 				'requirement' =>
 					$requirement,
 			];
+
+			if ( $include_cost ) {
+
+				$entry['purchase_amount'] =
+					$has_purchase_amount
+						? (float) $fee->purchase_amount
+						: null;
+			}
+
+			$result[] = $entry;
 		}
 
 		return $result;

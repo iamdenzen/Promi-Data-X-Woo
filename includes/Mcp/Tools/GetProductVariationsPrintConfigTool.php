@@ -37,7 +37,7 @@ final class GetProductVariationsPrintConfigTool implements ToolInterface {
 
 
 	public function description(): string {
-		return 'Lists every WooCommerce variation of a variable product, each with its own name, SKU, attributes (e.g. Color/Size), and available print positions/decoration options with their calculated selling prices and fees. Only product_id is required. The parent product itself is identified by name/SKU only and never carries print configuration — this store always configures printing per variation. Use this to discover a product\'s variations and their print options in one call; use pdxw_get_variation_print_config when you already know a specific variation_id.';
+		return 'Lists every WooCommerce variation of a variable product, each with its own name, SKU, attributes (e.g. Color/Size), and available print positions/decoration options with their calculated selling prices and fees, plus purchase cost (purchase_price per price tier, purchase_amount per fee). Only product_id is required. The parent product itself is identified by name/SKU only and never carries print configuration — this store always configures printing per variation. Use this to discover a product\'s variations and their print options in one call; use pdxw_get_variation_print_config when you already know a specific variation_id.';
 	}
 
 
